@@ -8,7 +8,7 @@
 ## Current Status
 
 **Active phase:** Phase 1 — The "Rigid" MVP  
-**Next immediate task:** Double-click label to rename inline on canvas
+**Next immediate task:** Fit-to-screen (`Ctrl+Shift+F`) and reset zoom (`Ctrl+0`)
 
 ---
 
@@ -46,7 +46,7 @@
 - [x] Room drag with snap-to-grid on release
 - [x] Room selection (click) / deselect (click canvas or Esc)
 - [x] **Canvas inline resize** — click room → input overlay for W/H (Tab to switch)
-- [ ] Double-click label to rename inline on canvas
+- [x] Double-click label to rename inline on canvas
 - [ ] Fit-to-screen (`Ctrl+Shift+F`)
 - [ ] Reset zoom to 100% (`Ctrl+0`)
 - [ ] PNG export (`Ctrl+E` / Snapshot button)
@@ -67,8 +67,8 @@
 - [x] `Ctrl+Y` / `Cmd+Shift+Z` — redo
 - [x] `Escape` — deselect
 - [x] `Space + Drag` — pan canvas
-- [ ] `Tab` — switch W → H in resize input
-- [ ] `Enter` — confirm resize / rename
+- [x] `Tab` — switch W → H in resize input
+- [x] `Enter` — confirm resize / rename
 - [ ] `Ctrl+S` — save JSON
 - [ ] `Ctrl+O` — open JSON
 - [ ] `Ctrl+E` — export PNG
