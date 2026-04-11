@@ -114,27 +114,39 @@ All internal state is stored in **feet**; Konva renders in pixels. Zoom adjusts 
 
 ### 3.5 Net Area Calculation with Cutters
 
+**Formula:** `Actual_Area = (W × H) - Σ(Overlapping_Cutter_Areas)`
+
+> **MVP assumption:** Cutters are always fully contained within their parent room, so `Overlapping_Cutter_Area` = full cutter area (`w × h`). If a cutter ever extends outside the parent boundary, use the intersection area instead (see intersection helper below).
+
 ```typescript
 interface Room {
   id: string;
-  name: string;
-  x: number;       // feet
-  y: number;       // feet
-  width: number;   // feet
-  height: number;  // feet
+  label: string;
+  x: number;   // feet (top-left origin)
+  y: number;   // feet
+  w: number;   // feet (width)
+  h: number;   // feet (height)
+  color: string;
   isCutter: boolean;
-  parentId: string | null;
+  targetParent: string | null; // id of the parent room this cutter belongs to
 }
 
+// Intersection area between two rooms (handles partial overlap correctly)
+const intersectionArea = (a: Room, b: Room): number => {
+  const overlapW = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
+  const overlapH = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+  return overlapW * overlapH;
+};
+
 const computeNetArea = (room: Room, allRooms: Room[]): number => {
-  const gross = room.width * room.height;
-  const cutters = allRooms.filter(
-    (r) => r.isCutter && r.parentId === room.id
-  );
-  const cutArea = cutters.reduce((sum, c) => sum + c.width * c.height, 0);
+  const gross = room.w * room.h;
+  const cutters = allRooms.filter((r) => r.isCutter && r.targetParent === room.id);
+  const cutArea = cutters.reduce((sum, c) => sum + intersectionArea(room, c), 0);
   return gross - cutArea;
 };
 ```
+
+> `cut_by` (the reverse lookup from parent → cutter IDs) is **derived at runtime**, not stored. Derive it with: `allRooms.filter(r => r.targetParent === room.id).map(r => r.id)`
 
 ### 3.6 Wall-Snap for Doors & Windows
 
@@ -227,24 +239,55 @@ interface HistoryStore {
 | Phase 3 | Add Supabase (Postgres + Auth) for paid cloud save | Row-level security per user |
 | Phase 4 | Supabase Storage for PDF blobs; version history table | Keep JSON as portable backup format |
 
-**JSON Schema (v1):**
+**JSON Schema (v1.0-MVP):**
 ```json
 {
-  "version": 1,
-  "meta": { "name": "My House", "createdAt": "ISO8601", "updatedAt": "ISO8601" },
-  "settings": { "ppf": 40, "gridFt": 0.5, "floors": ["Basement", "Floor 1"] },
+  "version": "1.0-MVP",
+  "meta": {
+    "project_title": "Quick-Plan Room-Blocker",
+    "createdAt": "ISO8601",
+    "updatedAt": "ISO8601"
+  },
+  "canvas": {
+    "grid_snap": 0.5,
+    "unit": "ft",
+    "ppf": 40,
+    "floors": ["Basement", "Floor 1", "Floor 2"]
+  },
   "rooms": [
     {
-      "id": "uuid",
-      "name": "Living Room",
+      "id": "r1",
+      "label": "Master Bedroom",
       "floor": "Floor 1",
-      "x": 0, "y": 0, "width": 20, "height": 15,
-      "isCutter": false, "parentId": null,
-      "openings": [{ "id": "uuid", "type": "door", "edge": "left", "offset": 3, "width": 3 }]
+      "x": 0, "y": 0, "w": 16.0, "h": 12.0,
+      "color": "#e0e0e0",
+      "isCutter": false,
+      "targetParent": null,
+      "openings": [
+        { "id": "o1", "type": "door", "edge": "left", "offset": 3.0, "w": 3.0 }
+      ]
+    },
+    {
+      "id": "r2",
+      "label": "Walk-in Closet",
+      "floor": "Floor 1",
+      "x": 12.0, "y": 0, "w": 4.0, "h": 6.0,
+      "color": "#ffcccc",
+      "isCutter": true,
+      "targetParent": "r1",
+      "openings": []
     }
-  ]
+  ],
+  "ui_state": {
+    "selected_id": null,
+    "show_net_area": true
+  }
 }
 ```
+
+> **Note on `ui_state`:** Only persist display preferences (`show_net_area`, `selected_id`). Do **not** persist transient runtime state like `modifier_pressed` (which key is currently held) — that always resets to `null` on load and belongs in memory only.
+>
+> **Note on `cut_by`:** Not stored in the file. Derive at runtime from `rooms.filter(r => r.targetParent === parentId)`. Storing it in both places creates a sync risk.
 
 ---
 
