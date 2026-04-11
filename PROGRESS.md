@@ -8,7 +8,7 @@
 ## Current Status
 
 **Active phase:** Phase 1 — The "Rigid" MVP  
-**Next immediate task:** Canvas inline resize (click room → type W/H directly on canvas)
+**Next immediate task:** Double-click label to rename inline on canvas
 
 ---
 
@@ -45,7 +45,7 @@
 - [x] Space + drag to pan
 - [x] Room drag with snap-to-grid on release
 - [x] Room selection (click) / deselect (click canvas or Esc)
-- [ ] **Canvas inline resize** — click room → input overlay for W/H (Tab to switch)
+- [x] **Canvas inline resize** — click room → input overlay for W/H (Tab to switch)
 - [ ] Double-click label to rename inline on canvas
 - [ ] Fit-to-screen (`Ctrl+Shift+F`)
 - [ ] Reset zoom to 100% (`Ctrl+0`)
