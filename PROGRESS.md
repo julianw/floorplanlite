@@ -8,7 +8,7 @@
 ## Current Status
 
 **Active phase:** Phase 1 — The "Rigid" MVP  
-**Next immediate task:** Fit-to-screen (`Ctrl+Shift+F`) and reset zoom (`Ctrl+0`)
+**Next immediate task:** PNG export (`Ctrl+E` / Snapshot button)
 
 ---
 
@@ -47,8 +47,8 @@
 - [x] Room selection (click) / deselect (click canvas or Esc)
 - [x] **Canvas inline resize** — click room → input overlay for W/H (Tab to switch)
 - [x] Double-click label to rename inline on canvas
-- [ ] Fit-to-screen (`Ctrl+Shift+F`)
-- [ ] Reset zoom to 100% (`Ctrl+0`)
+- [x] Fit-to-screen (`Ctrl+Shift+F`) — scales & pans to fit all rooms with padding
+- [x] Reset zoom to 100% (`Ctrl+0`) — resets scale and pan to origin
 - [ ] PNG export (`Ctrl+E` / Snapshot button)
 
 ### Sidebar & UI
@@ -72,8 +72,8 @@
 - [ ] `Ctrl+S` — save JSON
 - [ ] `Ctrl+O` — open JSON
 - [ ] `Ctrl+E` — export PNG
-- [ ] `Ctrl+0` — reset zoom
-- [ ] `Ctrl+Shift+F` — fit to screen
+- [x] `Ctrl+0` — reset zoom to 100%
+- [x] `Ctrl+Shift+F` — fit to screen
 
 ---
 
