@@ -28,9 +28,10 @@ export function FloorPlanCanvas() {
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isPanning   = useRef(false);
 
-  const [size, setSize]           = useState({ width: 100, height: 100 });
+  const [size, setSize]             = useState({ width: 100, height: 100 });
   const [resizeMode, setResizeMode] = useState<ResizeMode | null>(null);
   const [renameMode, setRenameMode] = useState<RenameMode | null>(null);
+  const [zoomLevel, setZoomLevel]   = useState(100); // percentage, for toolbar display
 
   const {
     rooms, uiState, canvas,
@@ -71,6 +72,16 @@ export function FloorPlanCanvas() {
       if (e.key === 'Escape') {
         setSelectedId(null); return;
       }
+      if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+        e.preventDefault(); resetZoom(); return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
+        e.preventDefault();
+        fitToScreen(useFloorPlanStore.getState().rooms.filter(
+          (r) => r.floor === useFloorPlanStore.getState().uiState.activeFloor
+        ));
+        return;
+      }
       if (e.code === 'Space' && !isPanning.current) {
         e.preventDefault();
         isPanning.current = true;
@@ -95,9 +106,9 @@ export function FloorPlanCanvas() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [uiState.selectedId, deleteRoom, setSelectedId, undo, redo]);
+  }, [uiState.selectedId, deleteRoom, setSelectedId, undo, redo, resetZoom, fitToScreen]);
 
-  // ── Zoom on scroll ────────────────────────────────────────────────────────
+  // ── Zoom helpers ──────────────────────────────────────────────────────────
 
   const dismissOverlays = useCallback(() => {
     setResizeMode(null);
@@ -122,7 +133,42 @@ export function FloorPlanCanvas() {
       x: pointer.x - origin.x * newScale,
       y: pointer.y - origin.y * newScale,
     });
+    setZoomLevel(Math.round(newScale * 100));
   }, [dismissOverlays]);
+
+  /** Reset scale to 100% and pan back to origin. */
+  const resetZoom = useCallback(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    stage.scale({ x: 1, y: 1 });
+    stage.position({ x: 0, y: 0 });
+    setZoomLevel(100);
+  }, []);
+
+  /**
+   * Scale and pan the stage so all rooms on the current floor fit in the
+   * viewport with a padding margin. Capped at 400% to avoid excessive zoom.
+   */
+  const fitToScreen = useCallback((rooms: Room[]) => {
+    const stage = stageRef.current;
+    if (!stage || rooms.length === 0) return;
+    const PADDING = 60; // px
+    const minX = Math.min(...rooms.map((r) => r.x));
+    const minY = Math.min(...rooms.map((r) => r.y));
+    const maxX = Math.max(...rooms.map((r) => r.x + r.w));
+    const maxY = Math.max(...rooms.map((r) => r.y + r.h));
+    const contentW = ftToPx(maxX - minX, ppf);
+    const contentH = ftToPx(maxY - minY, ppf);
+    const scaleX = (size.width  - PADDING * 2) / contentW;
+    const scaleY = (size.height - PADDING * 2) / contentH;
+    const scale  = Math.min(scaleX, scaleY, 4);
+    stage.scale({ x: scale, y: scale });
+    stage.position({
+      x: (size.width  - contentW * scale) / 2 - ftToPx(minX, ppf) * scale,
+      y: (size.height - contentH * scale) / 2 - ftToPx(minY, ppf) * scale,
+    });
+    setZoomLevel(Math.round(scale * 100));
+  }, [size, ppf]);
 
   // ── Overlay positioning ───────────────────────────────────────────────────
 
@@ -245,9 +291,9 @@ export function FloorPlanCanvas() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  const activeRooms  = rooms.filter((r) => r.floor === uiState.activeFloor);
-  const resizeRoom   = resizeMode ? rooms.find((r) => r.id === resizeMode.roomId) : null;
-  const renameRoom_  = renameMode ? rooms.find((r) => r.id === renameMode.roomId) : null;
+  const activeRooms = rooms.filter((r) => r.floor === uiState.activeFloor);
+  const resizeRoom  = resizeMode ? rooms.find((r) => r.id === resizeMode.roomId) : null;
+  const renameRoom_ = renameMode ? rooms.find((r) => r.id === renameMode.roomId) : null;
 
   return (
     <div ref={containerRef} className="relative w-full h-full bg-gray-100 cursor-default">
@@ -355,6 +401,33 @@ export function FloorPlanCanvas() {
           onCancel={cancelRename}
         />
       )}
+
+      {/* Zoom toolbar — bottom-right corner */}
+      <div className="absolute bottom-4 right-4 flex items-center gap-1 bg-white rounded-lg shadow-md border border-gray-200 px-1.5 py-1 z-10 select-none">
+        <button
+          title="Fit to screen (Ctrl+Shift+F)"
+          onClick={() => fitToScreen(activeRooms)}
+          disabled={activeRooms.length === 0}
+          className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed text-gray-600 transition-colors"
+        >
+          {/* Fit icon: four inward-pointing arrows */}
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <path d="M1 5V1h4M9 1h4v4M13 9v4H9M5 13H1V9" />
+          </svg>
+        </button>
+
+        <span className="text-xs text-gray-500 tabular-nums w-9 text-center">
+          {zoomLevel}%
+        </span>
+
+        <button
+          title="Reset zoom to 100% (Ctrl+0)"
+          onClick={resetZoom}
+          className="px-1.5 py-0.5 rounded hover:bg-gray-100 text-xs font-medium text-gray-600 transition-colors"
+        >
+          1:1
+        </button>
+      </div>
     </div>
   );
 }
