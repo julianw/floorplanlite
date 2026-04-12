@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { useFloorPlanStore } from '../../store/useFloorPlanStore';
+import { isOverlapping } from '../../engine/geometry';
 
 export function Sidebar() {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -99,7 +100,10 @@ export function Sidebar() {
               className="w-3 h-3 rounded-sm flex-shrink-0 border border-gray-300"
               style={{ background: room.color }}
             />
-            <span className="truncate">{room.label}</span>
+            <span className="truncate flex-1">{room.label}</span>
+            {room.isCutter && (
+              <span className="text-[10px] font-medium text-amber-600 flex-shrink-0">✂</span>
+            )}
           </button>
         ))}
       </div>
@@ -160,6 +164,72 @@ export function Sidebar() {
               {getNetArea(selected.id).toFixed(1)} ft²
             </span>
           </p>
+
+          {/* ── Cutter toggle ── */}
+          <div className="border-t border-gray-100 pt-2.5 space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selected.isCutter}
+                onChange={(e) => {
+                  const enabling = e.target.checked;
+                  // When enabling, auto-select a parent if exactly one room overlaps
+                  const autoParent = enabling
+                    ? rooms.find(
+                        (r) =>
+                          r.id !== selected.id &&
+                          !r.isCutter &&
+                          r.floor === uiState.activeFloor &&
+                          isOverlapping(r, selected)
+                      )?.id ?? null
+                    : null;
+                  updateRoom(selected.id, {
+                    isCutter: enabling,
+                    targetParent: autoParent,
+                  });
+                }}
+                className="rounded"
+              />
+              <span className="text-xs font-medium text-amber-700">Is Cutter</span>
+            </label>
+
+            {selected.isCutter && (
+              <label className="block">
+                <span className="text-xs text-gray-500">Cuts into</span>
+                <select
+                  className="mt-0.5 w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  value={selected.targetParent ?? ''}
+                  onChange={(e) =>
+                    updateRoom(selected.id, { targetParent: e.target.value || null })
+                  }
+                >
+                  <option value="">— select parent —</option>
+                  {rooms
+                    .filter(
+                      (r) =>
+                        r.id !== selected.id &&
+                        !r.isCutter &&
+                        r.floor === uiState.activeFloor
+                    )
+                    .map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.label}
+                      </option>
+                    ))}
+                </select>
+                {selected.targetParent && (
+                  <p className="mt-1 text-[10px] text-amber-600">
+                    Subtracts{' '}
+                    <span className="font-semibold">
+                      {(selected.w * selected.h).toFixed(1)} ft²
+                    </span>{' '}
+                    from{' '}
+                    {rooms.find((r) => r.id === selected.targetParent)?.label ?? 'parent'}
+                  </p>
+                )}
+              </label>
+            )}
+          </div>
 
           {/* Delete */}
           <button

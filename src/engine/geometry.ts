@@ -45,3 +45,18 @@ export const isOverlapping = (a: Room, b: Room): boolean =>
   a.x + a.w > b.x &&
   a.y < b.y + b.h &&
   a.y + a.h > b.y;
+
+/**
+ * Returns the intersection rectangle of two rooms in feet, or null if they
+ * don't overlap. Used to render collision highlights on the canvas.
+ */
+export const intersectionRect = (
+  a: Room, b: Room
+): { x: number; y: number; w: number; h: number } | null => {
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const w = Math.min(a.x + a.w, b.x + b.w) - x;
+  const h = Math.min(a.y + a.h, b.y + b.h) - y;
+  if (w <= 0 || h <= 0) return null;
+  return { x, y, w, h };
+};

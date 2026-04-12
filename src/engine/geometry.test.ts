@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { snapToGrid, ftToPx, pxToFt, intersectionArea, computeNetArea, isOverlapping } from './geometry';
+import { snapToGrid, ftToPx, pxToFt, intersectionArea, computeNetArea, isOverlapping, intersectionRect } from './geometry';
 import type { Room } from '../types';
 
 const room = (overrides: Partial<Room> = {}): Room => ({
@@ -79,5 +79,28 @@ describe('isOverlapping', () => {
     const a = room({ x: 0, y: 0, w: 5, h: 5 });
     const b = room({ x: 5, y: 0, w: 5, h: 5 });
     expect(isOverlapping(a, b)).toBe(false);
+  });
+});
+
+describe('intersectionRect', () => {
+  it('returns null when rooms do not overlap', () => {
+    const a = room({ x: 0, y: 0, w: 5, h: 5 });
+    const b = room({ x: 6, y: 0, w: 5, h: 5 });
+    expect(intersectionRect(a, b)).toBeNull();
+  });
+  it('returns null for touching rooms', () => {
+    const a = room({ x: 0, y: 0, w: 5, h: 5 });
+    const b = room({ x: 5, y: 0, w: 5, h: 5 });
+    expect(intersectionRect(a, b)).toBeNull();
+  });
+  it('returns correct rect for partial overlap', () => {
+    const a = room({ x: 0, y: 0, w: 6, h: 6 });
+    const b = room({ x: 4, y: 4, w: 6, h: 6 });
+    expect(intersectionRect(a, b)).toEqual({ x: 4, y: 4, w: 2, h: 2 });
+  });
+  it('returns inner room rect when fully contained', () => {
+    const a = room({ x: 0, y: 0, w: 10, h: 10 });
+    const b = room({ x: 2, y: 2, w: 4,  h: 4  });
+    expect(intersectionRect(a, b)).toEqual({ x: 2, y: 2, w: 4, h: 4 });
   });
 });

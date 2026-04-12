@@ -1,8 +1,8 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { Stage, Layer, Rect, Text, Group } from 'react-konva';
 import type Konva from 'konva';
 import { useFloorPlanStore } from '../../store/useFloorPlanStore';
-import { ftToPx, pxToFt, snapToGrid } from '../../engine/geometry';
+import { ftToPx, pxToFt, snapToGrid, intersectionRect } from '../../engine/geometry';
 import { ResizeInput } from './ResizeInput';
 import { LabelInput } from './LabelInput';
 import type { Room } from '../../types';
@@ -352,6 +352,28 @@ export function FloorPlanCanvas() {
   const resizeRoom  = resizeMode ? rooms.find((r) => r.id === resizeMode.roomId) : null;
   const renameRoom_ = renameMode ? rooms.find((r) => r.id === renameMode.roomId) : null;
 
+  /**
+   * Soft collisions: overlapping pairs that are NOT intentional cutter-parent
+   * relationships. Recomputed only when active rooms change.
+   */
+  const softCollisions = useMemo(() => {
+    const rects: { x: number; y: number; w: number; h: number }[] = [];
+    for (let i = 0; i < activeRooms.length; i++) {
+      for (let j = i + 1; j < activeRooms.length; j++) {
+        const a = activeRooms[i];
+        const b = activeRooms[j];
+        // Skip intentional cutter-parent pairs — they're supposed to overlap
+        if (
+          (a.isCutter && a.targetParent === b.id) ||
+          (b.isCutter && b.targetParent === a.id)
+        ) continue;
+        const rect = intersectionRect(a, b);
+        if (rect) rects.push(rect);
+      }
+    }
+    return rects;
+  }, [activeRooms]);
+
   return (
     <div ref={containerRef} className="relative w-full h-full bg-gray-100 cursor-default">
       <Stage
@@ -398,9 +420,14 @@ export function FloorPlanCanvas() {
                   width={pw}
                   height={ph}
                   fill={room.color}
-                  stroke={isRenaming ? '#7c3aed' : isResizing ? '#7c3aed' : isSelected ? '#2563eb' : '#6b7280'}
-                  strokeWidth={isRenaming || isResizing || isSelected ? 2 : 1}
-                  dash={isResizing || isRenaming ? [6, 3] : undefined}
+                  stroke={
+                    isRenaming || isResizing ? '#7c3aed'
+                    : isSelected             ? '#2563eb'
+                    : room.isCutter          ? '#f59e0b'  // amber for cutter rooms
+                    : '#6b7280'
+                  }
+                  strokeWidth={isRenaming || isResizing || isSelected || room.isCutter ? 2 : 1}
+                  dash={isResizing || isRenaming ? [6, 3] : room.isCutter ? [4, 4] : undefined}
                   shadowColor={isSelected && !isResizing && !isRenaming ? '#2563eb' : undefined}
                   shadowBlur={isSelected && !isResizing && !isRenaming ? 6 : 0}
                   shadowOpacity={0.3}
@@ -432,6 +459,22 @@ export function FloorPlanCanvas() {
               </Group>
             );
           })}
+        </Layer>
+
+        {/* Collision overlay layer — rendered above rooms so it's always visible */}
+        <Layer listening={false}>
+          {softCollisions.map((rect, i) => (
+            <Rect
+              key={`collision-${i}`}
+              x={ftToPx(rect.x, ppf)}
+              y={ftToPx(rect.y, ppf)}
+              width={ftToPx(rect.w, ppf)}
+              height={ftToPx(rect.h, ppf)}
+              fill="rgba(239, 68, 68, 0.25)"
+              stroke="#ef4444"
+              strokeWidth={1.5}
+            />
+          ))}
         </Layer>
       </Stage>
 
