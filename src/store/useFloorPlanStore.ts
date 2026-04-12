@@ -24,6 +24,7 @@ interface FloorPlanStore {
   // Room mutations (all except rename push to history)
   addRoom: (x?: number, y?: number) => void;
   updateRoom: (id: string, patch: Partial<Pick<Room, 'x' | 'y' | 'w' | 'h' | 'color' | 'isCutter' | 'targetParent'>>) => void;
+  batchMoveRooms: (moves: { id: string; x: number; y: number }[]) => void; // atomic multi-room move (one undo step)
   renameRoom: (id: string, label: string) => void; // live update, no history push
   deleteRoom: (id: string) => void;
 
@@ -98,6 +99,23 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
         y: 'y' in patch ? snapToGrid(next.y, canvas.gridSnap) : next.y,
         w: 'w' in patch ? Math.max(snapToGrid(next.w, canvas.gridSnap), canvas.gridSnap) : next.w,
         h: 'h' in patch ? Math.max(snapToGrid(next.h, canvas.gridSnap), canvas.gridSnap) : next.h,
+      };
+    });
+    set({ rooms: updated, past: pushHistory(past, rooms), future: [] });
+  },
+
+  // ── Batch move (Sticky Push — one undo step for all displaced rooms) ─────
+
+  batchMoveRooms: (moves) => {
+    const { rooms, past, canvas } = get();
+    const lookup = new Map(moves.map((m) => [m.id, m]));
+    const updated = rooms.map((r): Room => {
+      const move = lookup.get(r.id);
+      if (!move) return r;
+      return {
+        ...r,
+        x: snapToGrid(move.x, canvas.gridSnap),
+        y: snapToGrid(move.y, canvas.gridSnap),
       };
     });
     set({ rooms: updated, past: pushHistory(past, rooms), future: [] });

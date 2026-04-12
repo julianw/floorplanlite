@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { Stage, Layer, Rect, Text, Group } from 'react-konva';
 import type Konva from 'konva';
 import { useFloorPlanStore } from '../../store/useFloorPlanStore';
-import { ftToPx, pxToFt, snapToGrid, intersectionArea, intersectionRect } from '../../engine/geometry';
+import { ftToPx, pxToFt, snapToGrid, intersectionArea, intersectionRect, touchingInDirection } from '../../engine/geometry';
 import { ResizeInput } from './ResizeInput';
 import { LabelInput } from './LabelInput';
 import type { Room } from '../../types';
@@ -33,10 +33,11 @@ export function FloorPlanCanvas() {
   const [renameMode, setRenameMode] = useState<RenameMode | null>(null);
   const [zoomLevel, setZoomLevel]   = useState(100); // percentage, for toolbar display
   const [shiftHeld, setShiftHeld]   = useState(false); // Stamp Mode indicator
+  const [altHeld, setAltHeld]       = useState(false); // Sticky Push indicator
 
   const {
     rooms, uiState, canvas,
-    updateRoom, renameRoom, deleteRoom, setSelectedId,
+    updateRoom, batchMoveRooms, renameRoom, deleteRoom, setSelectedId,
     undo, redo, getNetArea,
   } = useFloorPlanStore();
 
@@ -149,6 +150,7 @@ export function FloorPlanCanvas() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Shift') { setShiftHeld(true); return; }
+      if (e.key === 'Alt')   { setAltHeld(true); e.preventDefault(); return; }
       // Overlays handle their own keys
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
@@ -193,6 +195,7 @@ export function FloorPlanCanvas() {
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.key === 'Shift') { setShiftHeld(false); }
+      if (e.key === 'Alt')   { setAltHeld(false); }
       if (e.code === 'Space') {
         isPanning.current = false;
         if (stageRef.current) {
@@ -378,11 +381,18 @@ export function FloorPlanCanvas() {
   }, [activeRooms]);
 
   return (
-    <div ref={containerRef} className={`relative w-full h-full bg-gray-100 ${shiftHeld ? 'cursor-crosshair' : 'cursor-default'}`}>
+    <div ref={containerRef} className={`relative w-full h-full bg-gray-100 ${shiftHeld ? 'cursor-crosshair' : altHeld ? 'cursor-move' : 'cursor-default'}`}>
       {/* Stamp Mode indicator */}
       {shiftHeld && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-amber-500 text-white text-xs font-semibold px-3 py-1 rounded-full shadow-md pointer-events-none select-none">
           ✂ Stamp Mode — drag a room onto another to make it a cutter
+        </div>
+      )}
+
+      {/* Sticky Push indicator */}
+      {altHeld && !shiftHeld && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-green-600 text-white text-xs font-semibold px-3 py-1 rounded-full shadow-md pointer-events-none select-none">
+          ↔ Sticky Push — drag to push touching rooms
         </div>
       )}
 
@@ -449,6 +459,33 @@ export function FloorPlanCanvas() {
                         ? { isCutter: true, targetParent: bestParent.id }
                         : {}),
                     });
+                  } else if (e.evt.altKey) {
+                    // Sticky Push: BFS — carry all edge-touching neighbors in the drag direction
+                    const latestRooms = useFloorPlanStore.getState().rooms;
+                    const origRoom = latestRooms.find((r) => r.id === room.id)!;
+                    const dx = snappedX - origRoom.x;
+                    const dy = snappedY - origRoom.y;
+
+                    if (dx === 0 && dy === 0) return;
+
+                    const floorRooms = latestRooms.filter((r) => r.floor === uiState.activeFloor);
+                    const displaced = new Map<string, { x: number; y: number }>();
+                    displaced.set(room.id, { x: snappedX, y: snappedY });
+                    const queue: string[] = [room.id];
+
+                    while (queue.length > 0) {
+                      const currentId = queue.shift()!;
+                      const currentRoom = floorRooms.find((r) => r.id === currentId)!;
+                      const candidates = floorRooms.filter((r) => !displaced.has(r.id));
+                      for (const neighbor of touchingInDirection(currentRoom, candidates, dx, dy)) {
+                        displaced.set(neighbor.id, { x: neighbor.x + dx, y: neighbor.y + dy });
+                        queue.push(neighbor.id);
+                      }
+                    }
+
+                    batchMoveRooms(
+                      Array.from(displaced.entries()).map(([id, pos]) => ({ id, ...pos }))
+                    );
                   } else {
                     updateRoom(room.id, { x: snappedX, y: snappedY });
                   }
