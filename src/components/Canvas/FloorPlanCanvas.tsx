@@ -82,6 +82,13 @@ export function FloorPlanCanvas() {
         ));
         return;
       }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
+        e.preventDefault();
+        exportPng(useFloorPlanStore.getState().rooms.filter(
+          (r) => r.floor === useFloorPlanStore.getState().uiState.activeFloor
+        ));
+        return;
+      }
       if (e.code === 'Space' && !isPanning.current) {
         e.preventDefault();
         isPanning.current = true;
@@ -106,7 +113,7 @@ export function FloorPlanCanvas() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [uiState.selectedId, deleteRoom, setSelectedId, undo, redo, resetZoom, fitToScreen]);
+  }, [uiState.selectedId, deleteRoom, setSelectedId, undo, redo, resetZoom, fitToScreen, exportPng]);
 
   // ── Zoom helpers ──────────────────────────────────────────────────────────
 
@@ -169,6 +176,56 @@ export function FloorPlanCanvas() {
     });
     setZoomLevel(Math.round(scale * 100));
   }, [size, ppf]);
+
+  /**
+   * Export the current floor as a PNG, clipped to the rooms' bounding box.
+   *
+   * Strategy: temporarily reconfigure the stage to scale=1 and position the
+   * content at (PADDING, PADDING), resize the stage canvas to exactly fit the
+   * content, call toDataURL(), then restore everything. This gives a clean
+   * fixed-resolution export regardless of the current viewport zoom/pan.
+   */
+  const exportPng = useCallback((roomsToExport: Room[]) => {
+    const stage = stageRef.current;
+    if (!stage || roomsToExport.length === 0) return;
+
+    const PADDING = 40; // px around content at scale=1
+
+    // Content bounding box in Konva pixels at scale=1
+    const minX = Math.min(...roomsToExport.map((r) => ftToPx(r.x, ppf)));
+    const minY = Math.min(...roomsToExport.map((r) => ftToPx(r.y, ppf)));
+    const maxX = Math.max(...roomsToExport.map((r) => ftToPx(r.x + r.w, ppf)));
+    const maxY = Math.max(...roomsToExport.map((r) => ftToPx(r.y + r.h, ppf)));
+
+    const exportW = Math.ceil(maxX - minX + PADDING * 2);
+    const exportH = Math.ceil(maxY - minY + PADDING * 2);
+
+    // Save current stage state
+    const savedScale = stage.scaleX();
+    const savedPos   = stage.position();
+    const savedW     = stage.width();
+    const savedH     = stage.height();
+
+    // Reconfigure for export: 1:1 scale, content anchored at (PADDING, PADDING)
+    stage.scale({ x: 1, y: 1 });
+    stage.position({ x: PADDING - minX, y: PADDING - minY });
+    stage.width(exportW);
+    stage.height(exportH);
+
+    const dataUrl = stage.toDataURL({ pixelRatio: 2, mimeType: 'image/png' });
+
+    // Restore stage
+    stage.scale({ x: savedScale, y: savedScale });
+    stage.position(savedPos);
+    stage.width(savedW);
+    stage.height(savedH);
+
+    // Trigger browser download
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = 'floorplan.png';
+    link.click();
+  }, [ppf]);
 
   // ── Overlay positioning ───────────────────────────────────────────────────
 
@@ -402,15 +459,31 @@ export function FloorPlanCanvas() {
         />
       )}
 
-      {/* Zoom toolbar — bottom-right corner */}
+      {/* Toolbar — bottom-right corner */}
       <div className="absolute bottom-4 right-4 flex items-center gap-1 bg-white rounded-lg shadow-md border border-gray-200 px-1.5 py-1 z-10 select-none">
+        {/* Snapshot / PNG export */}
+        <button
+          title="Export PNG (Ctrl+E)"
+          onClick={() => exportPng(activeRooms)}
+          disabled={activeRooms.length === 0}
+          className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed text-gray-600 transition-colors"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="1" y="3" width="12" height="9" rx="1" />
+            <circle cx="7" cy="7.5" r="2" />
+            <path d="M4.5 3V2.5A.5.5 0 0 1 5 2h4a.5.5 0 0 1 .5.5V3" />
+          </svg>
+        </button>
+
+        <div className="w-px h-4 bg-gray-200 mx-0.5" />
+
+        {/* Fit to screen */}
         <button
           title="Fit to screen (Ctrl+Shift+F)"
           onClick={() => fitToScreen(activeRooms)}
           disabled={activeRooms.length === 0}
           className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed text-gray-600 transition-colors"
         >
-          {/* Fit icon: four inward-pointing arrows */}
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
             <path d="M1 5V1h4M9 1h4v4M13 9v4H9M5 13H1V9" />
           </svg>
@@ -420,6 +493,7 @@ export function FloorPlanCanvas() {
           {zoomLevel}%
         </span>
 
+        {/* Reset zoom */}
         <button
           title="Reset zoom to 100% (Ctrl+0)"
           onClick={resetZoom}

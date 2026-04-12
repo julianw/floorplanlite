@@ -8,7 +8,7 @@
 ## Current Status
 
 **Active phase:** Phase 1 — The "Rigid" MVP  
-**Next immediate task:** PNG export (`Ctrl+E` / Snapshot button)
+**Next immediate task:** Show/hide net area toggle + room colour picker (last Phase 1 UI items)
 
 ---
 
@@ -49,7 +49,7 @@
 - [x] Double-click label to rename inline on canvas
 - [x] Fit-to-screen (`Ctrl+Shift+F`) — scales & pans to fit all rooms with padding
 - [x] Reset zoom to 100% (`Ctrl+0`) — resets scale and pan to origin
-- [ ] PNG export (`Ctrl+E` / Snapshot button)
+- [x] PNG export (`Ctrl+E` / Snapshot button) — clips to content bounds, 2× pixel ratio
 
 ### Sidebar & UI
 - [x] Floor tabs (Basement / Floor 1 / Floor 2)
@@ -71,7 +71,7 @@
 - [x] `Enter` — confirm resize / rename
 - [ ] `Ctrl+S` — save JSON
 - [ ] `Ctrl+O` — open JSON
-- [ ] `Ctrl+E` — export PNG
+- [x] `Ctrl+E` — export PNG
 - [x] `Ctrl+0` — reset zoom to 100%
 - [x] `Ctrl+Shift+F` — fit to screen
 
