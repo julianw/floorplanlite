@@ -7,8 +7,10 @@
 
 ## Current Status
 
-**Active phase:** Phase 1 — The "Rigid" MVP  
-**Next immediate task:** Show/hide net area toggle + room colour picker (last Phase 1 UI items)
+**Active phase:** Phase 2 — Boolean & Conflict System  
+**Next immediate task:** Stamp Mode (`Shift+Drag` — auto-set as cutter on drop)
+
+> ⚠️ Two Phase 1 UI items were deferred by choice: Show/hide net area toggle + room colour picker. Can be picked up anytime.
 
 ---
 
@@ -23,7 +25,7 @@
 
 ---
 
-## Phase 1 — The "Rigid" MVP 🚧 In Progress
+## Phase 1 — The "Rigid" MVP ✅ (mostly complete — 2 UI items deferred)
 
 ### Infrastructure
 - [x] Vite + React + TypeScript project scaffold
@@ -77,11 +79,13 @@
 
 ---
 
-## Phase 2 — Boolean & Conflict System ⏳ Not Started
+## Phase 2 — Boolean & Conflict System 🚧 In Progress
 
-- [ ] Collision detection: red glow on overlapping rooms
-- [ ] "Cutter" toggle on a room
-- [ ] Cutter subtracts from parent net area (engine already supports this)
+- [x] Collision detection: red glow on overlapping rooms (skips intentional cutter-parent pairs)
+- [x] `intersectionRect()` engine helper + 4 unit tests
+- [x] "Cutter" toggle in sidebar properties panel (amber dashed border on canvas)
+- [x] Cutter subtracts from parent net area (auto-detects parent on enable)
+- [x] ✂ badge in room list for cutter rooms
 - [ ] `Shift + Drag` — Stamp Mode (auto-set as Cutter on drop)
 - [ ] `Alt + Drag` — Sticky Push (push adjacent rooms)
 - [ ] Conflict menu popup: [Cut] [Merge] [Layer]
