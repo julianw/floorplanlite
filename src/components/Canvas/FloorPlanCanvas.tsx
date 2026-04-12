@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { Stage, Layer, Rect, Text, Group } from 'react-konva';
 import type Konva from 'konva';
 import { useFloorPlanStore } from '../../store/useFloorPlanStore';
-import { ftToPx, pxToFt, snapToGrid, intersectionRect } from '../../engine/geometry';
+import { ftToPx, pxToFt, snapToGrid, intersectionArea, intersectionRect } from '../../engine/geometry';
 import { ResizeInput } from './ResizeInput';
 import { LabelInput } from './LabelInput';
 import type { Room } from '../../types';
@@ -32,6 +32,7 @@ export function FloorPlanCanvas() {
   const [resizeMode, setResizeMode] = useState<ResizeMode | null>(null);
   const [renameMode, setRenameMode] = useState<RenameMode | null>(null);
   const [zoomLevel, setZoomLevel]   = useState(100); // percentage, for toolbar display
+  const [shiftHeld, setShiftHeld]   = useState(false); // Stamp Mode indicator
 
   const {
     rooms, uiState, canvas,
@@ -52,96 +53,12 @@ export function FloorPlanCanvas() {
     return () => ro.disconnect();
   }, []);
 
-  // ── Keyboard shortcuts ────────────────────────────────────────────────────
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      // Overlays handle their own keys
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (uiState.selectedId) deleteRoom(uiState.selectedId);
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
-        e.preventDefault(); undo(); return;
-      }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
-        e.preventDefault(); redo(); return;
-      }
-      if (e.key === 'Escape') {
-        setSelectedId(null); return;
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === '0') {
-        e.preventDefault(); resetZoom(); return;
-      }
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
-        e.preventDefault();
-        fitToScreen(useFloorPlanStore.getState().rooms.filter(
-          (r) => r.floor === useFloorPlanStore.getState().uiState.activeFloor
-        ));
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
-        e.preventDefault();
-        exportPng(useFloorPlanStore.getState().rooms.filter(
-          (r) => r.floor === useFloorPlanStore.getState().uiState.activeFloor
-        ));
-        return;
-      }
-      if (e.code === 'Space' && !isPanning.current) {
-        e.preventDefault();
-        isPanning.current = true;
-        if (stageRef.current) {
-          stageRef.current.draggable(true);
-          stageRef.current.container().style.cursor = 'grab';
-        }
-      }
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        isPanning.current = false;
-        if (stageRef.current) {
-          stageRef.current.draggable(false);
-          stageRef.current.container().style.cursor = 'default';
-        }
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
-    };
-  }, [uiState.selectedId, deleteRoom, setSelectedId, undo, redo, resetZoom, fitToScreen, exportPng]);
-
-  // ── Zoom helpers ──────────────────────────────────────────────────────────
+  // ── Zoom helpers & export — declared before keyboard effect ─────────────
 
   const dismissOverlays = useCallback(() => {
     setResizeMode(null);
     setRenameMode(null);
   }, []);
-
-  const handleWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
-    e.evt.preventDefault();
-    dismissOverlays();
-    const stage = stageRef.current;
-    if (!stage) return;
-    const oldScale = stage.scaleX();
-    const pointer  = stage.getPointerPosition()!;
-    const origin   = {
-      x: (pointer.x - stage.x()) / oldScale,
-      y: (pointer.y - stage.y()) / oldScale,
-    };
-    const direction = e.evt.deltaY < 0 ? 1 : -1;
-    const newScale  = Math.min(Math.max(oldScale * (1 + direction * 0.08), 0.1), 4);
-    stage.scale({ x: newScale, y: newScale });
-    stage.position({
-      x: pointer.x - origin.x * newScale,
-      y: pointer.y - origin.y * newScale,
-    });
-    setZoomLevel(Math.round(newScale * 100));
-  }, [dismissOverlays]);
 
   /** Reset scale to 100% and pan back to origin. */
   const resetZoom = useCallback(() => {
@@ -226,6 +143,92 @@ export function FloorPlanCanvas() {
     link.download = 'floorplan.png';
     link.click();
   }, [ppf]);
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') { setShiftHeld(true); return; }
+      // Overlays handle their own keys
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (uiState.selectedId) deleteRoom(uiState.selectedId);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
+        e.preventDefault(); undo(); return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
+        e.preventDefault(); redo(); return;
+      }
+      if (e.key === 'Escape') {
+        setSelectedId(null); return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+        e.preventDefault(); resetZoom(); return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
+        e.preventDefault();
+        fitToScreen(useFloorPlanStore.getState().rooms.filter(
+          (r) => r.floor === useFloorPlanStore.getState().uiState.activeFloor
+        ));
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
+        e.preventDefault();
+        exportPng(useFloorPlanStore.getState().rooms.filter(
+          (r) => r.floor === useFloorPlanStore.getState().uiState.activeFloor
+        ));
+        return;
+      }
+      if (e.code === 'Space' && !isPanning.current) {
+        e.preventDefault();
+        isPanning.current = true;
+        if (stageRef.current) {
+          stageRef.current.draggable(true);
+          stageRef.current.container().style.cursor = 'grab';
+        }
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') { setShiftHeld(false); }
+      if (e.code === 'Space') {
+        isPanning.current = false;
+        if (stageRef.current) {
+          stageRef.current.draggable(false);
+          stageRef.current.container().style.cursor = 'default';
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [uiState.selectedId, deleteRoom, setSelectedId, undo, redo, resetZoom, fitToScreen, exportPng]);
+
+  const handleWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
+    e.evt.preventDefault();
+    dismissOverlays();
+    const stage = stageRef.current;
+    if (!stage) return;
+    const oldScale = stage.scaleX();
+    const pointer  = stage.getPointerPosition()!;
+    const origin   = {
+      x: (pointer.x - stage.x()) / oldScale,
+      y: (pointer.y - stage.y()) / oldScale,
+    };
+    const direction = e.evt.deltaY < 0 ? 1 : -1;
+    const newScale  = Math.min(Math.max(oldScale * (1 + direction * 0.08), 0.1), 4);
+    stage.scale({ x: newScale, y: newScale });
+    stage.position({
+      x: pointer.x - origin.x * newScale,
+      y: pointer.y - origin.y * newScale,
+    });
+    setZoomLevel(Math.round(newScale * 100));
+  }, [dismissOverlays]);
 
   // ── Overlay positioning ───────────────────────────────────────────────────
 
@@ -375,7 +378,14 @@ export function FloorPlanCanvas() {
   }, [activeRooms]);
 
   return (
-    <div ref={containerRef} className="relative w-full h-full bg-gray-100 cursor-default">
+    <div ref={containerRef} className={`relative w-full h-full bg-gray-100 ${shiftHeld ? 'cursor-crosshair' : 'cursor-default'}`}>
+      {/* Stamp Mode indicator */}
+      {shiftHeld && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-amber-500 text-white text-xs font-semibold px-3 py-1 rounded-full shadow-md pointer-events-none select-none">
+          ✂ Stamp Mode — drag a room onto another to make it a cutter
+        </div>
+      )}
+
       <Stage
         ref={stageRef}
         width={size.width}
@@ -410,10 +420,38 @@ export function FloorPlanCanvas() {
                 onDblClick={(e) => { e.cancelBubble = true; handleRoomDblClick(room); }}
                 onDragStart={dismissOverlays}
                 onDragEnd={(e) => {
-                  updateRoom(room.id, {
-                    x: snapToGrid(pxToFt(e.target.x(), ppf), gridSnap),
-                    y: snapToGrid(pxToFt(e.target.y(), ppf), gridSnap),
-                  });
+                  const snappedX = snapToGrid(pxToFt(e.target.x(), ppf), gridSnap);
+                  const snappedY = snapToGrid(pxToFt(e.target.y(), ppf), gridSnap);
+
+                  if (e.evt.shiftKey) {
+                    // Stamp Mode: auto-assign as cutter to the best overlapping parent
+                    const allRooms = useFloorPlanStore.getState().rooms;
+                    const droppedRoom = { ...room, x: snappedX, y: snappedY };
+                    const bestParent = allRooms
+                      .filter(
+                        (r) =>
+                          r.id !== room.id &&
+                          !r.isCutter &&
+                          r.floor === uiState.activeFloor
+                      )
+                      .reduce<{ id: string | null; area: number }>(
+                        (best, r) => {
+                          const area = intersectionArea(droppedRoom, r);
+                          return area > best.area ? { id: r.id, area } : best;
+                        },
+                        { id: null, area: 0 }
+                      );
+
+                    updateRoom(room.id, {
+                      x: snappedX,
+                      y: snappedY,
+                      ...(bestParent.id !== null
+                        ? { isCutter: true, targetParent: bestParent.id }
+                        : {}),
+                    });
+                  } else {
+                    updateRoom(room.id, { x: snappedX, y: snappedY });
+                  }
                 }}
               >
                 <Rect
