@@ -20,13 +20,18 @@ interface FloorPlanStore {
   uiState: UiState;
   past: Room[][];   // undo stack (snapshots of rooms array)
   future: Room[][]; // redo stack
+  suppressedCollisions: Set<string>; // keyed `${minId}:${maxId}` — transient, not persisted
 
   // Room mutations (all except rename push to history)
   addRoom: (x?: number, y?: number) => void;
   updateRoom: (id: string, patch: Partial<Pick<Room, 'x' | 'y' | 'w' | 'h' | 'color' | 'isCutter' | 'targetParent'>>) => void;
   batchMoveRooms: (moves: { id: string; x: number; y: number }[]) => void; // atomic multi-room move (one undo step)
+  mergeRooms: (idA: string, idB: string) => void; // union bounding box, one undo step
   renameRoom: (id: string, label: string) => void; // live update, no history push
   deleteRoom: (id: string) => void;
+
+  // Collision suppression (Layer action — transient)
+  suppressCollision: (idA: string, idB: string) => void;
 
   // Selection
   setSelectedId: (id: string | null) => void;
@@ -60,6 +65,7 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
   },
   past: [],
   future: [],
+  suppressedCollisions: new Set<string>(),
 
   // ── Add ──────────────────────────────────────────────────────────────────
 
@@ -119,6 +125,56 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
       };
     });
     set({ rooms: updated, past: pushHistory(past, rooms), future: [] });
+  },
+
+  // ── Merge two rooms into bounding-box union (one undo step) ─────────────
+
+  mergeRooms: (idA, idB) => {
+    const { rooms, past } = get();
+    const a = rooms.find((r) => r.id === idA);
+    const b = rooms.find((r) => r.id === idB);
+    if (!a || !b) return;
+
+    const mx = Math.min(a.x, b.x);
+    const my = Math.min(a.y, b.y);
+    const mw = Math.max(a.x + a.w, b.x + b.w) - mx;
+    const mh = Math.max(a.y + a.h, b.y + b.h) - my;
+    const mergedId = crypto.randomUUID();
+
+    const merged: Room = {
+      id: mergedId,
+      label: a.label,
+      floor: a.floor,
+      x: mx, y: my, w: mw, h: mh,
+      color: a.color,
+      isCutter: false,
+      targetParent: null,
+      openings: [],
+    };
+
+    const updated = rooms
+      .filter((r) => r.id !== idA && r.id !== idB)
+      .map((r) =>
+        // Re-point cutter children of A or B to the merged room
+        r.targetParent === idA || r.targetParent === idB
+          ? { ...r, targetParent: mergedId }
+          : r
+      )
+      .concat(merged);
+
+    set({
+      rooms: updated,
+      past: pushHistory(past, rooms),
+      future: [],
+      uiState: { ...get().uiState, selectedId: mergedId },
+    });
+  },
+
+  // ── Suppress a collision pair (Layer action — transient) ──────────────────
+
+  suppressCollision: (idA, idB) => {
+    const key = [idA, idB].sort().join(':');
+    set((s) => ({ suppressedCollisions: new Set([...s.suppressedCollisions, key]) }));
   },
 
   // ── Rename (live, no history) ─────────────────────────────────────────────
