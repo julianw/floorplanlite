@@ -43,14 +43,18 @@ export function FloorPlanCanvas() {
   const [shiftHeld, setShiftHeld]         = useState(false); // Stamp Mode indicator
   const [altHeld, setAltHeld]             = useState(false); // Sticky Push indicator
   const [conflictMenu, setConflictMenu]   = useState<ConflictMenuState | null>(null);
+  // rubber-band selection: coordinates in Konva layer-local space (px)
+  const [rubberBand, setRubberBand]       = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 
   const {
     rooms, uiState, canvas,
-    updateRoom, batchMoveRooms, mergeRooms, renameRoom, deleteRoom, setSelectedId,
+    updateRoom, batchMoveRooms, mergeRooms, renameRoom, deleteRoom, deleteRooms,
+    setSelectedIds, toggleSelectedId,
     suppressedCollisions, suppressCollision,
     undo, redo, getNetArea,
   } = useFloorPlanStore();
 
+  const selectedIds = uiState.selectedIds;
   const { ppf, gridSnap } = canvas;
 
   // ── Responsive canvas size ────────────────────────────────────────────────
@@ -166,7 +170,8 @@ export function FloorPlanCanvas() {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (uiState.selectedId) deleteRoom(uiState.selectedId);
+        const ids = useFloorPlanStore.getState().uiState.selectedIds;
+        if (ids.length > 0) deleteRooms(ids);
         return;
       }
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
@@ -176,7 +181,7 @@ export function FloorPlanCanvas() {
         e.preventDefault(); redo(); return;
       }
       if (e.key === 'Escape') {
-        setSelectedId(null); return;
+        setSelectedIds([]); return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key === '0') {
         e.preventDefault(); resetZoom(); return;
@@ -221,7 +226,7 @@ export function FloorPlanCanvas() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [uiState.selectedId, deleteRoom, setSelectedId, undo, redo, resetZoom, fitToScreen, exportPng]);
+  }, [deleteRooms, setSelectedIds, undo, redo, resetZoom, fitToScreen, exportPng]);
 
   const handleWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
@@ -345,23 +350,32 @@ export function FloorPlanCanvas() {
   //
   // This prevents the resize overlay from briefly flashing on double-click.
 
-  const handleRoomClick = useCallback((room: Room) => {
-    setSelectedId(room.id);
+  const handleRoomClick = useCallback((room: Room, shiftKey: boolean) => {
+    if (shiftKey) {
+      // Shift+Click: immediately toggle room in/out of selection, no resize overlay
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+      }
+      toggleSelectedId(room.id);
+      return;
+    }
+    setSelectedIds([room.id]);
     if (clickTimerRef.current) return; // second click of a dbl-click — let dblClick handle it
     clickTimerRef.current = setTimeout(() => {
       clickTimerRef.current = null;
       openResizeOverlay(room);
     }, 200);
-  }, [setSelectedId, openResizeOverlay]);
+  }, [setSelectedIds, toggleSelectedId, openResizeOverlay]);
 
   const handleRoomDblClick = useCallback((room: Room) => {
     if (clickTimerRef.current) {
       clearTimeout(clickTimerRef.current);
       clickTimerRef.current = null;
     }
-    setSelectedId(room.id);
+    setSelectedIds([room.id]);
     openRenameOverlay(room);
-  }, [setSelectedId, openRenameOverlay]);
+  }, [setSelectedIds, openRenameOverlay]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -479,9 +493,35 @@ export function FloorPlanCanvas() {
         onDragStart={dismissOverlays}
         onClick={(e) => {
           if (e.target === e.target.getStage()) {
-            setSelectedId(null);
+            setSelectedIds([]);
             dismissOverlays();
           }
+        }}
+        onMouseDown={(e) => {
+          // Rubber-band: only on empty canvas, not while panning
+          if (e.target !== e.target.getStage()) return;
+          if (isPanning.current) return;
+          const pos = stageRef.current?.getRelativePointerPosition();
+          if (!pos) return;
+          setRubberBand({ x0: pos.x, y0: pos.y, x1: pos.x, y1: pos.y });
+        }}
+        onMouseMove={() => {
+          if (!rubberBand) return;
+          const pos = stageRef.current?.getRelativePointerPosition();
+          if (!pos) return;
+          setRubberBand((prev) => prev ? { ...prev, x1: pos.x, y1: pos.y } : null);
+        }}
+        onMouseUp={() => {
+          if (!rubberBand) return;
+          const minX = Math.min(rubberBand.x0, rubberBand.x1) / ppf;
+          const maxX = Math.max(rubberBand.x0, rubberBand.x1) / ppf;
+          const minY = Math.min(rubberBand.y0, rubberBand.y1) / ppf;
+          const maxY = Math.max(rubberBand.y0, rubberBand.y1) / ppf;
+          const selected = activeRooms
+            .filter((r) => r.x >= minX && r.x + r.w <= maxX && r.y >= minY && r.y + r.h <= maxY)
+            .map((r) => r.id);
+          if (selected.length > 0) setSelectedIds(selected);
+          setRubberBand(null);
         }}
       >
         <Layer>
@@ -491,7 +531,7 @@ export function FloorPlanCanvas() {
             const pw = ftToPx(room.w, ppf);
             const ph = ftToPx(room.h, ppf);
             const netArea    = getNetArea(room.id);
-            const isSelected = uiState.selectedId === room.id;
+            const isSelected = selectedIds.includes(room.id);
             const isResizing = resizeMode?.roomId === room.id;
             const isRenaming = renameMode?.roomId === room.id;
 
@@ -501,7 +541,7 @@ export function FloorPlanCanvas() {
                 x={px}
                 y={py}
                 draggable
-                onClick={(e) => { e.cancelBubble = true; handleRoomClick(room); }}
+                onClick={(e) => { e.cancelBubble = true; handleRoomClick(room, e.evt.shiftKey); }}
                 onDblClick={(e) => { e.cancelBubble = true; handleRoomDblClick(room); }}
                 onContextMenu={(e) => handleRoomContextMenu(e as Konva.KonvaEventObject<PointerEvent>, room)}
                 onDragStart={dismissOverlays}
@@ -563,7 +603,23 @@ export function FloorPlanCanvas() {
                       Array.from(displaced.entries()).map(([id, pos]) => ({ id, ...pos }))
                     );
                   } else {
-                    updateRoom(room.id, { x: snappedX, y: snappedY });
+                    // Normal move — if multiple rooms are selected, drag them all together
+                    const latestRooms = useFloorPlanStore.getState().rooms;
+                    const origRoom = latestRooms.find((r) => r.id === room.id)!;
+                    const dx = snappedX - origRoom.x;
+                    const dy = snappedY - origRoom.y;
+                    const currentSelectedIds = useFloorPlanStore.getState().uiState.selectedIds;
+
+                    if (currentSelectedIds.includes(room.id) && currentSelectedIds.length > 1) {
+                      batchMoveRooms(
+                        currentSelectedIds.map((id) => {
+                          const r = latestRooms.find((r) => r.id === id)!;
+                          return { id, x: r.x + dx, y: r.y + dy };
+                        })
+                      );
+                    } else {
+                      updateRoom(room.id, { x: snappedX, y: snappedY });
+                    }
                   }
                 }}
               >
@@ -626,6 +682,20 @@ export function FloorPlanCanvas() {
               strokeWidth={1.5}
             />
           ))}
+
+          {/* Rubber-band selection rect */}
+          {rubberBand && (
+            <Rect
+              x={Math.min(rubberBand.x0, rubberBand.x1)}
+              y={Math.min(rubberBand.y0, rubberBand.y1)}
+              width={Math.abs(rubberBand.x1 - rubberBand.x0)}
+              height={Math.abs(rubberBand.y1 - rubberBand.y0)}
+              fill="rgba(59, 130, 246, 0.08)"
+              stroke="#3b82f6"
+              strokeWidth={1}
+              dash={[4, 3]}
+            />
+          )}
         </Layer>
       </Stage>
 

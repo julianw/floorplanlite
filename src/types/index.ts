@@ -28,7 +28,7 @@ export interface CanvasSettings {
 }
 
 export interface UiState {
-  selectedId: string | null;
+  selectedIds: string[];   // replaces selectedId — supports multi-select
   showNetArea: boolean;
   activeFloor: string;
 }

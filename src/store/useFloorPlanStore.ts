@@ -29,12 +29,14 @@ interface FloorPlanStore {
   mergeRooms: (idA: string, idB: string) => void; // union bounding box, one undo step
   renameRoom: (id: string, label: string) => void; // live update, no history push
   deleteRoom: (id: string) => void;
+  deleteRooms: (ids: string[]) => void; // bulk delete — one undo step
 
   // Collision suppression (Layer action — transient)
   suppressCollision: (idA: string, idB: string) => void;
 
   // Selection
-  setSelectedId: (id: string | null) => void;
+  setSelectedIds: (ids: string[]) => void;
+  toggleSelectedId: (id: string) => void; // Shift+Click add/remove
 
   // History
   undo: () => void;
@@ -59,7 +61,7 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
     floors: ['Basement', 'Floor 1', 'Floor 2'],
   },
   uiState: {
-    selectedId: null,
+    selectedIds: [],
     showNetArea: true,
     activeFloor: 'Floor 1',
   },
@@ -88,7 +90,7 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
       rooms: [...rooms, newRoom],
       past: pushHistory(past, rooms),
       future: [],
-      uiState: { ...get().uiState, selectedId: newRoom.id },
+      uiState: { ...get().uiState, selectedIds: [newRoom.id] },
     });
   },
 
@@ -166,7 +168,7 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
       rooms: updated,
       past: pushHistory(past, rooms),
       future: [],
-      uiState: { ...get().uiState, selectedId: mergedId },
+      uiState: { ...get().uiState, selectedIds: [mergedId] },
     });
   },
 
@@ -189,20 +191,34 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
 
   deleteRoom: (id) => {
     const { rooms, past } = get();
-    // Also remove any cutter children that belong to this room
     const pruned = rooms.filter((r) => r.id !== id && r.targetParent !== id);
-    set({
-      rooms: pruned,
-      past: pushHistory(past, rooms),
-      future: [],
-      uiState: { ...get().uiState, selectedId: null },
-    });
+    set({ rooms: pruned, past: pushHistory(past, rooms), future: [], uiState: { ...get().uiState, selectedIds: [] } });
+  },
+
+  deleteRooms: (ids) => {
+    const { rooms, past } = get();
+    const idSet = new Set(ids);
+    // Remove deleted rooms and cutter children whose parent was deleted
+    const pruned = rooms.filter(
+      (r) => !idSet.has(r.id) && !(r.targetParent && idSet.has(r.targetParent))
+    );
+    set({ rooms: pruned, past: pushHistory(past, rooms), future: [], uiState: { ...get().uiState, selectedIds: [] } });
   },
 
   // ── Selection ─────────────────────────────────────────────────────────────
 
-  setSelectedId: (id) => {
-    set((s) => ({ uiState: { ...s.uiState, selectedId: id } }));
+  setSelectedIds: (ids) => {
+    set((s) => ({ uiState: { ...s.uiState, selectedIds: ids } }));
+  },
+
+  toggleSelectedId: (id) => {
+    set((s) => {
+      const { selectedIds } = s.uiState;
+      const next = selectedIds.includes(id)
+        ? selectedIds.filter((x) => x !== id)
+        : [...selectedIds, id];
+      return { uiState: { ...s.uiState, selectedIds: next } };
+    });
   },
 
   // ── Undo / Redo ───────────────────────────────────────────────────────────
@@ -215,7 +231,7 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
       rooms: prev,
       past: past.slice(0, -1),
       future: [structuredClone(rooms), ...future],
-      uiState: { ...get().uiState, selectedId: null },
+      uiState: { ...get().uiState, selectedIds: [] },
     });
   },
 
@@ -227,7 +243,7 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
       rooms: next,
       past: [...past, structuredClone(rooms)],
       future: future.slice(1),
-      uiState: { ...get().uiState, selectedId: null },
+      uiState: { ...get().uiState, selectedIds: [] },
     });
   },
 
@@ -253,7 +269,7 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
       },
       canvas,
       rooms,
-      uiState: { selectedId: null, showNetArea: uiState.showNetArea, activeFloor: uiState.activeFloor },
+      uiState: { selectedIds: [], showNetArea: uiState.showNetArea, activeFloor: uiState.activeFloor },
     };
     return JSON.stringify(state, null, 2);
   },
@@ -264,7 +280,11 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
       set({
         rooms: state.rooms ?? [],
         canvas: state.canvas ?? get().canvas,
-        uiState: { ...(state.uiState ?? {}), selectedId: null },
+        uiState: {
+          selectedIds: [],
+          showNetArea: (state.uiState as UiState & { showNetArea?: boolean })?.showNetArea ?? true,
+          activeFloor: (state.uiState as UiState & { activeFloor?: string })?.activeFloor ?? 'Floor 1',
+        },
         past: [],
         future: [],
       });
