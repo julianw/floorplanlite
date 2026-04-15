@@ -5,6 +5,7 @@ import { useFloorPlanStore } from '../../store/useFloorPlanStore';
 import { ftToPx, pxToFt, snapToGrid, intersectionArea, intersectionRect, touchingInDirection } from '../../engine/geometry';
 import { ResizeInput } from './ResizeInput';
 import { LabelInput } from './LabelInput';
+import { ConflictMenu } from './ConflictMenu';
 import type { Room } from '../../types';
 
 // ── Overlay state shapes ──────────────────────────────────────────────────────
@@ -20,6 +21,13 @@ interface RenameMode {
   value: string;
 }
 
+interface ConflictMenuState {
+  roomA: Room;
+  roomB: Room;
+  screenX: number;
+  screenY: number;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function FloorPlanCanvas() {
@@ -32,12 +40,14 @@ export function FloorPlanCanvas() {
   const [resizeMode, setResizeMode] = useState<ResizeMode | null>(null);
   const [renameMode, setRenameMode] = useState<RenameMode | null>(null);
   const [zoomLevel, setZoomLevel]   = useState(100); // percentage, for toolbar display
-  const [shiftHeld, setShiftHeld]   = useState(false); // Stamp Mode indicator
-  const [altHeld, setAltHeld]       = useState(false); // Sticky Push indicator
+  const [shiftHeld, setShiftHeld]         = useState(false); // Stamp Mode indicator
+  const [altHeld, setAltHeld]             = useState(false); // Sticky Push indicator
+  const [conflictMenu, setConflictMenu]   = useState<ConflictMenuState | null>(null);
 
   const {
     rooms, uiState, canvas,
-    updateRoom, batchMoveRooms, renameRoom, deleteRoom, setSelectedId,
+    updateRoom, batchMoveRooms, mergeRooms, renameRoom, deleteRoom, setSelectedId,
+    suppressedCollisions, suppressCollision,
     undo, redo, getNetArea,
   } = useFloorPlanStore();
 
@@ -59,6 +69,7 @@ export function FloorPlanCanvas() {
   const dismissOverlays = useCallback(() => {
     setResizeMode(null);
     setRenameMode(null);
+    setConflictMenu(null);
   }, []);
 
   /** Reset scale to 100% and pan back to origin. */
@@ -373,12 +384,76 @@ export function FloorPlanCanvas() {
           (a.isCutter && a.targetParent === b.id) ||
           (b.isCutter && b.targetParent === a.id)
         ) continue;
+        // Skip pairs the user has chosen to layer (intentional overlap)
+        if (suppressedCollisions.has([a.id, b.id].sort().join(':'))) continue;
         const rect = intersectionRect(a, b);
         if (rect) rects.push(rect);
       }
     }
     return rects;
-  }, [activeRooms]);
+  }, [activeRooms, suppressedCollisions]);
+
+  // ── Conflict menu handlers ─────────────────────────────────────────────────
+
+  const handleRoomContextMenu = useCallback(
+    (e: Konva.KonvaEventObject<PointerEvent>, room: Room) => {
+      e.evt.preventDefault();
+      e.cancelBubble = true;
+
+      // Find the conflict partner with the largest overlap area on this floor
+      const partner = activeRooms
+        .filter((other) => {
+          if (other.id === room.id) return false;
+          if (
+            (room.isCutter && room.targetParent === other.id) ||
+            (other.isCutter && other.targetParent === room.id)
+          ) return false;
+          if (suppressedCollisions.has([room.id, other.id].sort().join(':'))) return false;
+          return intersectionRect(room, other) !== null;
+        })
+        .sort((a, b) => {
+          const areaA = intersectionArea(room, a);
+          const areaB = intersectionArea(room, b);
+          return areaB - areaA;
+        })[0];
+
+      if (!partner) return;
+
+      const stage = stageRef.current;
+      if (!stage) return;
+      const pos = stage.getPointerPosition();
+      if (!pos) return;
+
+      setConflictMenu({ roomA: room, roomB: partner, screenX: pos.x, screenY: pos.y });
+    },
+    [activeRooms, suppressedCollisions]
+  );
+
+  const handleConflictCut = useCallback(() => {
+    if (!conflictMenu) return;
+    const { roomA, roomB } = conflictMenu;
+    // Smaller room (by area) becomes the cutter
+    const aArea = roomA.w * roomA.h;
+    const bArea = roomB.w * roomB.h;
+    if (aArea <= bArea) {
+      updateRoom(roomA.id, { isCutter: true, targetParent: roomB.id });
+    } else {
+      updateRoom(roomB.id, { isCutter: true, targetParent: roomA.id });
+    }
+    setConflictMenu(null);
+  }, [conflictMenu, updateRoom]);
+
+  const handleConflictMerge = useCallback(() => {
+    if (!conflictMenu) return;
+    mergeRooms(conflictMenu.roomA.id, conflictMenu.roomB.id);
+    setConflictMenu(null);
+  }, [conflictMenu, mergeRooms]);
+
+  const handleConflictLayer = useCallback(() => {
+    if (!conflictMenu) return;
+    suppressCollision(conflictMenu.roomA.id, conflictMenu.roomB.id);
+    setConflictMenu(null);
+  }, [conflictMenu, suppressCollision]);
 
   return (
     <div ref={containerRef} className={`relative w-full h-full bg-gray-100 ${shiftHeld ? 'cursor-crosshair' : altHeld ? 'cursor-move' : 'cursor-default'}`}>
@@ -428,6 +503,7 @@ export function FloorPlanCanvas() {
                 draggable
                 onClick={(e) => { e.cancelBubble = true; handleRoomClick(room); }}
                 onDblClick={(e) => { e.cancelBubble = true; handleRoomDblClick(room); }}
+                onContextMenu={(e) => handleRoomContextMenu(e as Konva.KonvaEventObject<PointerEvent>, room)}
                 onDragStart={dismissOverlays}
                 onDragEnd={(e) => {
                   const snappedX = snapToGrid(pxToFt(e.target.x(), ppf), gridSnap);
@@ -574,6 +650,20 @@ export function FloorPlanCanvas() {
           onChange={(val) => setRenameMode((prev) => prev ? { ...prev, value: val } : null)}
           onCommit={commitRename}
           onCancel={cancelRename}
+        />
+      )}
+
+      {/* Conflict menu */}
+      {conflictMenu && (
+        <ConflictMenu
+          roomA={conflictMenu.roomA}
+          roomB={conflictMenu.roomB}
+          screenX={conflictMenu.screenX}
+          screenY={conflictMenu.screenY}
+          onCut={handleConflictCut}
+          onMerge={handleConflictMerge}
+          onLayer={handleConflictLayer}
+          onDismiss={() => setConflictMenu(null)}
         />
       )}
 

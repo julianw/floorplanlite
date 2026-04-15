@@ -8,7 +8,7 @@
 ## Current Status
 
 **Active phase:** Phase 2 — Boolean & Conflict System  
-**Next immediate task:** Conflict menu popup: [Cut] [Merge] [Layer]
+**Next immediate task:** Multi-select (`Shift+Click`, rubber-band drag)
 
 > ⚠️ Two Phase 1 UI items were deferred by choice: Show/hide net area toggle + room colour picker. Can be picked up anytime.
 
@@ -88,7 +88,7 @@
 - [x] ✂ badge in room list for cutter rooms
 - [x] `Shift + Drag` — Stamp Mode (auto-set as Cutter on drop)
 - [x] `Alt + Drag` — Sticky Push (push adjacent rooms)
-- [ ] Conflict menu popup: [Cut] [Merge] [Layer]
+- [x] Conflict menu popup: [Cut] [Merge] [Layer]
 - [ ] Multi-select (`Shift+Click`, rubber-band drag)
 
 ---
