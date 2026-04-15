@@ -8,7 +8,7 @@
 ## Current Status
 
 **Active phase:** Phase 2 — Boolean & Conflict System  
-**Next immediate task:** Sticky Push (`Alt+Drag` — push adjacent rooms)
+**Next immediate task:** Conflict menu popup: [Cut] [Merge] [Layer]
 
 > ⚠️ Two Phase 1 UI items were deferred by choice: Show/hide net area toggle + room colour picker. Can be picked up anytime.
 
@@ -87,7 +87,7 @@
 - [x] Cutter subtracts from parent net area (auto-detects parent on enable)
 - [x] ✂ badge in room list for cutter rooms
 - [x] `Shift + Drag` — Stamp Mode (auto-set as Cutter on drop)
-- [ ] `Alt + Drag` — Sticky Push (push adjacent rooms)
+- [x] `Alt + Drag` — Sticky Push (push adjacent rooms)
 - [ ] Conflict menu popup: [Cut] [Merge] [Layer]
 - [ ] Multi-select (`Shift+Click`, rubber-band drag)
 

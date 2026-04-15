@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { snapToGrid, ftToPx, pxToFt, intersectionArea, computeNetArea, isOverlapping, intersectionRect } from './geometry';
+import { snapToGrid, ftToPx, pxToFt, intersectionArea, computeNetArea, isOverlapping, intersectionRect, touchingInDirection } from './geometry';
 import type { Room } from '../types';
 
 const room = (overrides: Partial<Room> = {}): Room => ({
@@ -102,5 +102,36 @@ describe('intersectionRect', () => {
     const a = room({ x: 0, y: 0, w: 10, h: 10 });
     const b = room({ x: 2, y: 2, w: 4,  h: 4  });
     expect(intersectionRect(a, b)).toEqual({ x: 2, y: 2, w: 4, h: 4 });
+  });
+});
+
+describe('touchingInDirection', () => {
+  it('finds room touching on the right when dx > 0', () => {
+    const a = room({ x: 0, y: 0, w: 10, h: 10 });
+    const b = room({ id: 'r2', x: 10, y: 0, w: 5, h: 10 });
+    const result = touchingInDirection(a, [b], 2, 0);
+    expect(result.map((r) => r.id)).toEqual(['r2']);
+  });
+  it('does not return room on the opposite side', () => {
+    const a = room({ x: 0, y: 0, w: 10, h: 10 });
+    const left = room({ id: 'left', x: -5, y: 0, w: 5, h: 10 });
+    expect(touchingInDirection(a, [left], 2, 0)).toHaveLength(0);
+  });
+  it('does not return room sharing only a corner', () => {
+    const a = room({ x: 0, y: 0, w: 10, h: 10 });
+    const corner = room({ id: 'corner', x: 10, y: 10, w: 5, h: 5 });
+    expect(touchingInDirection(a, [corner], 2, 0)).toHaveLength(0);
+  });
+  it('finds room below when dy > 0', () => {
+    const a = room({ x: 0, y: 0, w: 10, h: 10 });
+    const below = room({ id: 'below', x: 0, y: 10, w: 10, h: 5 });
+    expect(touchingInDirection(a, [below], 0, 3).map((r) => r.id)).toEqual(['below']);
+  });
+  it('chains: b touches a, c touches b', () => {
+    const a = room({ x: 0,  y: 0, w: 10, h: 10 });
+    const b = room({ id: 'b', x: 10, y: 0, w: 10, h: 10 });
+    const c = room({ id: 'c', x: 20, y: 0, w: 10, h: 10 });
+    expect(touchingInDirection(a, [b, c], 5, 0).map((r) => r.id)).toContain('b');
+    expect(touchingInDirection(b, [c],    5, 0).map((r) => r.id)).toContain('c');
   });
 });

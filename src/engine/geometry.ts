@@ -47,6 +47,64 @@ export const isOverlapping = (a: Room, b: Room): boolean =>
   a.y + a.h > b.y;
 
 /**
+ * Returns rooms from `candidates` that are edge-touching `room` in the
+ * direction of the drag (dx, dy). Used for Sticky Push BFS chain detection.
+ *
+ * A candidate qualifies when:
+ *  - Its leading edge is within `tolerance` ft of room's trailing edge in
+ *    the drag direction.
+ *  - They share at least some perpendicular extent (not just corner-to-corner).
+ *
+ * Diagonal drags check both axes independently.
+ */
+export const touchingInDirection = (
+  room: { x: number; y: number; w: number; h: number },
+  candidates: Room[],
+  dx: number,
+  dy: number,
+  tolerance = 0.05,
+): Room[] => {
+  const result: Room[] = [];
+  const seen = new Set<string>();
+
+  for (const other of candidates) {
+    if (seen.has(other.id)) continue;
+    let touches = false;
+
+    if (dx > 0) {
+      if (
+        Math.abs((room.x + room.w) - other.x) <= tolerance &&
+        Math.max(room.y, other.y) < Math.min(room.y + room.h, other.y + other.h)
+      ) touches = true;
+    } else if (dx < 0) {
+      if (
+        Math.abs((other.x + other.w) - room.x) <= tolerance &&
+        Math.max(room.y, other.y) < Math.min(room.y + room.h, other.y + other.h)
+      ) touches = true;
+    }
+
+    if (!touches && dy > 0) {
+      if (
+        Math.abs((room.y + room.h) - other.y) <= tolerance &&
+        Math.max(room.x, other.x) < Math.min(room.x + room.w, other.x + other.w)
+      ) touches = true;
+    } else if (!touches && dy < 0) {
+      if (
+        Math.abs((other.y + other.h) - room.y) <= tolerance &&
+        Math.max(room.x, other.x) < Math.min(room.x + room.w, other.x + other.w)
+      ) touches = true;
+    }
+
+    if (touches) {
+      result.push(other);
+      seen.add(other.id);
+    }
+  }
+
+  return result;
+};
+
+/**
  * Returns the intersection rectangle of two rooms in feet, or null if they
  * don't overlap. Used to render collision highlights on the canvas.
  */
