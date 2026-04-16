@@ -7,8 +7,11 @@
 
 ## Current Status
 
-**Active phase:** Phase 1 — The "Rigid" MVP  
-**Next immediate task:** Canvas inline resize (click room → type W/H directly on canvas)
+**Active phase:** Phase 2 — Boolean & Conflict System  
+**Active phase:** Phase 3 — Openings & Verticals  
+**Next immediate task:** Door / Window blocks that snap to wall perimeter
+
+> ⚠️ Two Phase 1 UI items were deferred by choice: Show/hide net area toggle + room colour picker. Can be picked up anytime.
 
 ---
 
@@ -23,7 +26,7 @@
 
 ---
 
-## Phase 1 — The "Rigid" MVP 🚧 In Progress
+## Phase 1 — The "Rigid" MVP ✅ (mostly complete — 2 UI items deferred)
 
 ### Infrastructure
 - [x] Vite + React + TypeScript project scaffold
@@ -45,11 +48,11 @@
 - [x] Space + drag to pan
 - [x] Room drag with snap-to-grid on release
 - [x] Room selection (click) / deselect (click canvas or Esc)
-- [ ] **Canvas inline resize** — click room → input overlay for W/H (Tab to switch)
-- [ ] Double-click label to rename inline on canvas
-- [ ] Fit-to-screen (`Ctrl+Shift+F`)
-- [ ] Reset zoom to 100% (`Ctrl+0`)
-- [ ] PNG export (`Ctrl+E` / Snapshot button)
+- [x] **Canvas inline resize** — click room → input overlay for W/H (Tab to switch)
+- [x] Double-click label to rename inline on canvas
+- [x] Fit-to-screen (`Ctrl+Shift+F`) — scales & pans to fit all rooms with padding
+- [x] Reset zoom to 100% (`Ctrl+0`) — resets scale and pan to origin
+- [x] PNG export (`Ctrl+E` / Snapshot button) — clips to content bounds, 2× pixel ratio
 
 ### Sidebar & UI
 - [x] Floor tabs (Basement / Floor 1 / Floor 2)
@@ -67,25 +70,27 @@
 - [x] `Ctrl+Y` / `Cmd+Shift+Z` — redo
 - [x] `Escape` — deselect
 - [x] `Space + Drag` — pan canvas
-- [ ] `Tab` — switch W → H in resize input
-- [ ] `Enter` — confirm resize / rename
+- [x] `Tab` — switch W → H in resize input
+- [x] `Enter` — confirm resize / rename
 - [ ] `Ctrl+S` — save JSON
 - [ ] `Ctrl+O` — open JSON
-- [ ] `Ctrl+E` — export PNG
-- [ ] `Ctrl+0` — reset zoom
-- [ ] `Ctrl+Shift+F` — fit to screen
+- [x] `Ctrl+E` — export PNG
+- [x] `Ctrl+0` — reset zoom to 100%
+- [x] `Ctrl+Shift+F` — fit to screen
 
 ---
 
-## Phase 2 — Boolean & Conflict System ⏳ Not Started
+## Phase 2 — Boolean & Conflict System ✅
 
-- [ ] Collision detection: red glow on overlapping rooms
-- [ ] "Cutter" toggle on a room
-- [ ] Cutter subtracts from parent net area (engine already supports this)
-- [ ] `Shift + Drag` — Stamp Mode (auto-set as Cutter on drop)
-- [ ] `Alt + Drag` — Sticky Push (push adjacent rooms)
-- [ ] Conflict menu popup: [Cut] [Merge] [Layer]
-- [ ] Multi-select (`Shift+Click`, rubber-band drag)
+- [x] Collision detection: red glow on overlapping rooms (skips intentional cutter-parent pairs)
+- [x] `intersectionRect()` engine helper + 4 unit tests
+- [x] "Cutter" toggle in sidebar properties panel (amber dashed border on canvas)
+- [x] Cutter subtracts from parent net area (auto-detects parent on enable)
+- [x] ✂ badge in room list for cutter rooms
+- [x] `Shift + Drag` — Stamp Mode (auto-set as Cutter on drop)
+- [x] `Alt + Drag` — Sticky Push (push adjacent rooms)
+- [x] Conflict menu popup: [Cut] [Merge] [Layer]
+- [x] Multi-select (`Shift+Click`, rubber-band drag)
 
 ---
 

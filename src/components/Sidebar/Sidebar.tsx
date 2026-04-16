@@ -1,16 +1,19 @@
 import { useRef } from 'react';
 import { useFloorPlanStore } from '../../store/useFloorPlanStore';
+import { isOverlapping } from '../../engine/geometry';
 
 export function Sidebar() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const {
     rooms, uiState, canvas,
-    addRoom, updateRoom, renameRoom, deleteRoom,
-    setSelectedId, undo, redo,
+    addRoom, updateRoom, renameRoom, deleteRoom, deleteRooms,
+    setSelectedIds, toggleSelectedId, undo, redo,
     exportJson, importJson, getNetArea,
   } = useFloorPlanStore();
 
-  const selected = rooms.find((r) => r.id === uiState.selectedId);
+  const { selectedIds } = uiState;
+  const primaryId = selectedIds[0] ?? null;
+  const selected = rooms.find((r) => r.id === primaryId);
   const activeRooms = rooms.filter((r) => r.floor === uiState.activeFloor);
 
   // ── Save / Open ───────────────────────────────────────────────────────────
@@ -58,7 +61,7 @@ export function Sidebar() {
             }`}
             onClick={() =>
               useFloorPlanStore.setState((s) => ({
-                uiState: { ...s.uiState, activeFloor: floor, selectedId: null },
+                uiState: { ...s.uiState, activeFloor: floor, selectedIds: [] },
               }))
             }
           >
@@ -89,23 +92,44 @@ export function Sidebar() {
           <button
             key={room.id}
             className={`w-full text-left px-2.5 py-1.5 rounded-md mb-0.5 text-sm flex items-center gap-2 transition-colors ${
-              uiState.selectedId === room.id
+              selectedIds.includes(room.id)
                 ? 'bg-blue-50 text-blue-900'
                 : 'text-gray-700 hover:bg-gray-50'
             }`}
-            onClick={() => setSelectedId(room.id)}
+            onClick={(e) => e.shiftKey ? toggleSelectedId(room.id) : setSelectedIds([room.id])}
           >
             <span
               className="w-3 h-3 rounded-sm flex-shrink-0 border border-gray-300"
               style={{ background: room.color }}
             />
-            <span className="truncate">{room.label}</span>
+            <span className="truncate flex-1">{room.label}</span>
+            {room.isCutter && (
+              <span className="text-[10px] font-medium text-amber-600 flex-shrink-0">✂</span>
+            )}
           </button>
         ))}
       </div>
 
-      {/* Properties panel — shown when a room is selected */}
-      {selected && (
+      {/* Multi-select banner — shown when 2+ rooms are selected */}
+      {selectedIds.length > 1 && (
+        <div className="border-t border-gray-200 px-4 py-3 space-y-2">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+            Selection
+          </p>
+          <p className="text-xs text-gray-600">
+            <span className="font-semibold text-gray-800">{selectedIds.length}</span> rooms selected
+          </p>
+          <button
+            className="w-full py-1 text-xs text-red-600 hover:bg-red-50 rounded-md border border-red-200 transition-colors"
+            onClick={() => deleteRooms(selectedIds)}
+          >
+            Delete {selectedIds.length} rooms
+          </button>
+        </div>
+      )}
+
+      {/* Properties panel — shown when exactly one room is selected */}
+      {selected && selectedIds.length === 1 && (
         <div className="border-t border-gray-200 px-4 py-3 space-y-2.5">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
             Properties
@@ -161,6 +185,72 @@ export function Sidebar() {
             </span>
           </p>
 
+          {/* ── Cutter toggle ── */}
+          <div className="border-t border-gray-100 pt-2.5 space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selected.isCutter}
+                onChange={(e) => {
+                  const enabling = e.target.checked;
+                  // When enabling, auto-select a parent if exactly one room overlaps
+                  const autoParent = enabling
+                    ? rooms.find(
+                        (r) =>
+                          r.id !== selected.id &&
+                          !r.isCutter &&
+                          r.floor === uiState.activeFloor &&
+                          isOverlapping(r, selected)
+                      )?.id ?? null
+                    : null;
+                  updateRoom(selected.id, {
+                    isCutter: enabling,
+                    targetParent: autoParent,
+                  });
+                }}
+                className="rounded"
+              />
+              <span className="text-xs font-medium text-amber-700">Is Cutter</span>
+            </label>
+
+            {selected.isCutter && (
+              <label className="block">
+                <span className="text-xs text-gray-500">Cuts into</span>
+                <select
+                  className="mt-0.5 w-full px-2 py-1 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  value={selected.targetParent ?? ''}
+                  onChange={(e) =>
+                    updateRoom(selected.id, { targetParent: e.target.value || null })
+                  }
+                >
+                  <option value="">— select parent —</option>
+                  {rooms
+                    .filter(
+                      (r) =>
+                        r.id !== selected.id &&
+                        !r.isCutter &&
+                        r.floor === uiState.activeFloor
+                    )
+                    .map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.label}
+                      </option>
+                    ))}
+                </select>
+                {selected.targetParent && (
+                  <p className="mt-1 text-[10px] text-amber-600">
+                    Subtracts{' '}
+                    <span className="font-semibold">
+                      {(selected.w * selected.h).toFixed(1)} ft²
+                    </span>{' '}
+                    from{' '}
+                    {rooms.find((r) => r.id === selected.targetParent)?.label ?? 'parent'}
+                  </p>
+                )}
+              </label>
+            )}
+          </div>
+
           {/* Delete */}
           <button
             className="w-full py-1 text-xs text-red-600 hover:bg-red-50 rounded-md border border-red-200 transition-colors"
@@ -170,6 +260,7 @@ export function Sidebar() {
           </button>
         </div>
       )}
+
 
       {/* Footer — file actions + undo/redo */}
       <div className="border-t border-gray-200 px-4 py-3 space-y-2">

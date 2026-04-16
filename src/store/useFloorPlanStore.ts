@@ -20,15 +20,23 @@ interface FloorPlanStore {
   uiState: UiState;
   past: Room[][];   // undo stack (snapshots of rooms array)
   future: Room[][]; // redo stack
+  suppressedCollisions: Set<string>; // keyed `${minId}:${maxId}` — transient, not persisted
 
   // Room mutations (all except rename push to history)
   addRoom: (x?: number, y?: number) => void;
   updateRoom: (id: string, patch: Partial<Pick<Room, 'x' | 'y' | 'w' | 'h' | 'color' | 'isCutter' | 'targetParent'>>) => void;
+  batchMoveRooms: (moves: { id: string; x: number; y: number }[]) => void; // atomic multi-room move (one undo step)
+  mergeRooms: (idA: string, idB: string) => void; // union bounding box, one undo step
   renameRoom: (id: string, label: string) => void; // live update, no history push
   deleteRoom: (id: string) => void;
+  deleteRooms: (ids: string[]) => void; // bulk delete — one undo step
+
+  // Collision suppression (Layer action — transient)
+  suppressCollision: (idA: string, idB: string) => void;
 
   // Selection
-  setSelectedId: (id: string | null) => void;
+  setSelectedIds: (ids: string[]) => void;
+  toggleSelectedId: (id: string) => void; // Shift+Click add/remove
 
   // History
   undo: () => void;
@@ -53,12 +61,13 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
     floors: ['Basement', 'Floor 1', 'Floor 2'],
   },
   uiState: {
-    selectedId: null,
+    selectedIds: [],
     showNetArea: true,
     activeFloor: 'Floor 1',
   },
   past: [],
   future: [],
+  suppressedCollisions: new Set<string>(),
 
   // ── Add ──────────────────────────────────────────────────────────────────
 
@@ -81,7 +90,7 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
       rooms: [...rooms, newRoom],
       past: pushHistory(past, rooms),
       future: [],
-      uiState: { ...get().uiState, selectedId: newRoom.id },
+      uiState: { ...get().uiState, selectedIds: [newRoom.id] },
     });
   },
 
@@ -103,6 +112,73 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
     set({ rooms: updated, past: pushHistory(past, rooms), future: [] });
   },
 
+  // ── Batch move (Sticky Push — one undo step for all displaced rooms) ─────
+
+  batchMoveRooms: (moves) => {
+    const { rooms, past, canvas } = get();
+    const lookup = new Map(moves.map((m) => [m.id, m]));
+    const updated = rooms.map((r): Room => {
+      const move = lookup.get(r.id);
+      if (!move) return r;
+      return {
+        ...r,
+        x: snapToGrid(move.x, canvas.gridSnap),
+        y: snapToGrid(move.y, canvas.gridSnap),
+      };
+    });
+    set({ rooms: updated, past: pushHistory(past, rooms), future: [] });
+  },
+
+  // ── Merge two rooms into bounding-box union (one undo step) ─────────────
+
+  mergeRooms: (idA, idB) => {
+    const { rooms, past } = get();
+    const a = rooms.find((r) => r.id === idA);
+    const b = rooms.find((r) => r.id === idB);
+    if (!a || !b) return;
+
+    const mx = Math.min(a.x, b.x);
+    const my = Math.min(a.y, b.y);
+    const mw = Math.max(a.x + a.w, b.x + b.w) - mx;
+    const mh = Math.max(a.y + a.h, b.y + b.h) - my;
+    const mergedId = crypto.randomUUID();
+
+    const merged: Room = {
+      id: mergedId,
+      label: a.label,
+      floor: a.floor,
+      x: mx, y: my, w: mw, h: mh,
+      color: a.color,
+      isCutter: false,
+      targetParent: null,
+      openings: [],
+    };
+
+    const updated = rooms
+      .filter((r) => r.id !== idA && r.id !== idB)
+      .map((r) =>
+        // Re-point cutter children of A or B to the merged room
+        r.targetParent === idA || r.targetParent === idB
+          ? { ...r, targetParent: mergedId }
+          : r
+      )
+      .concat(merged);
+
+    set({
+      rooms: updated,
+      past: pushHistory(past, rooms),
+      future: [],
+      uiState: { ...get().uiState, selectedIds: [mergedId] },
+    });
+  },
+
+  // ── Suppress a collision pair (Layer action — transient) ──────────────────
+
+  suppressCollision: (idA, idB) => {
+    const key = [idA, idB].sort().join(':');
+    set((s) => ({ suppressedCollisions: new Set([...s.suppressedCollisions, key]) }));
+  },
+
   // ── Rename (live, no history) ─────────────────────────────────────────────
 
   renameRoom: (id, label) => {
@@ -115,20 +191,34 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
 
   deleteRoom: (id) => {
     const { rooms, past } = get();
-    // Also remove any cutter children that belong to this room
     const pruned = rooms.filter((r) => r.id !== id && r.targetParent !== id);
-    set({
-      rooms: pruned,
-      past: pushHistory(past, rooms),
-      future: [],
-      uiState: { ...get().uiState, selectedId: null },
-    });
+    set({ rooms: pruned, past: pushHistory(past, rooms), future: [], uiState: { ...get().uiState, selectedIds: [] } });
+  },
+
+  deleteRooms: (ids) => {
+    const { rooms, past } = get();
+    const idSet = new Set(ids);
+    // Remove deleted rooms and cutter children whose parent was deleted
+    const pruned = rooms.filter(
+      (r) => !idSet.has(r.id) && !(r.targetParent && idSet.has(r.targetParent))
+    );
+    set({ rooms: pruned, past: pushHistory(past, rooms), future: [], uiState: { ...get().uiState, selectedIds: [] } });
   },
 
   // ── Selection ─────────────────────────────────────────────────────────────
 
-  setSelectedId: (id) => {
-    set((s) => ({ uiState: { ...s.uiState, selectedId: id } }));
+  setSelectedIds: (ids) => {
+    set((s) => ({ uiState: { ...s.uiState, selectedIds: ids } }));
+  },
+
+  toggleSelectedId: (id) => {
+    set((s) => {
+      const { selectedIds } = s.uiState;
+      const next = selectedIds.includes(id)
+        ? selectedIds.filter((x) => x !== id)
+        : [...selectedIds, id];
+      return { uiState: { ...s.uiState, selectedIds: next } };
+    });
   },
 
   // ── Undo / Redo ───────────────────────────────────────────────────────────
@@ -141,7 +231,7 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
       rooms: prev,
       past: past.slice(0, -1),
       future: [structuredClone(rooms), ...future],
-      uiState: { ...get().uiState, selectedId: null },
+      uiState: { ...get().uiState, selectedIds: [] },
     });
   },
 
@@ -153,7 +243,7 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
       rooms: next,
       past: [...past, structuredClone(rooms)],
       future: future.slice(1),
-      uiState: { ...get().uiState, selectedId: null },
+      uiState: { ...get().uiState, selectedIds: [] },
     });
   },
 
@@ -179,7 +269,7 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
       },
       canvas,
       rooms,
-      uiState: { selectedId: null, showNetArea: uiState.showNetArea, activeFloor: uiState.activeFloor },
+      uiState: { selectedIds: [], showNetArea: uiState.showNetArea, activeFloor: uiState.activeFloor },
     };
     return JSON.stringify(state, null, 2);
   },
@@ -190,7 +280,11 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
       set({
         rooms: state.rooms ?? [],
         canvas: state.canvas ?? get().canvas,
-        uiState: { ...(state.uiState ?? {}), selectedId: null },
+        uiState: {
+          selectedIds: [],
+          showNetArea: (state.uiState as UiState & { showNetArea?: boolean })?.showNetArea ?? true,
+          activeFloor: (state.uiState as UiState & { activeFloor?: string })?.activeFloor ?? 'Floor 1',
+        },
         past: [],
         future: [],
       });
