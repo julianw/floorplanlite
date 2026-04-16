@@ -677,9 +677,9 @@ export function FloorPlanCanvas() {
               y={ftToPx(rect.y, ppf)}
               width={ftToPx(rect.w, ppf)}
               height={ftToPx(rect.h, ppf)}
-              fill="rgba(239, 68, 68, 0.25)"
-              stroke="#ef4444"
-              strokeWidth={1.5}
+              fill="rgba(239, 68, 68, 0.45)"
+              stroke="#b91c1c"
+              strokeWidth={2.5}
             />
           ))}
 
