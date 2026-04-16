@@ -8,7 +8,8 @@
 ## Current Status
 
 **Active phase:** Phase 2 — Boolean & Conflict System  
-**Next immediate task:** Multi-select (`Shift+Click`, rubber-band drag)
+**Active phase:** Phase 3 — Openings & Verticals  
+**Next immediate task:** Door / Window blocks that snap to wall perimeter
 
 > ⚠️ Two Phase 1 UI items were deferred by choice: Show/hide net area toggle + room colour picker. Can be picked up anytime.
 
@@ -79,7 +80,7 @@
 
 ---
 
-## Phase 2 — Boolean & Conflict System 🚧 In Progress
+## Phase 2 — Boolean & Conflict System ✅
 
 - [x] Collision detection: red glow on overlapping rooms (skips intentional cutter-parent pairs)
 - [x] `intersectionRect()` engine helper + 4 unit tests
@@ -89,7 +90,7 @@
 - [x] `Shift + Drag` — Stamp Mode (auto-set as Cutter on drop)
 - [x] `Alt + Drag` — Sticky Push (push adjacent rooms)
 - [x] Conflict menu popup: [Cut] [Merge] [Layer]
-- [ ] Multi-select (`Shift+Click`, rubber-band drag)
+- [x] Multi-select (`Shift+Click`, rubber-band drag)
 
 ---
 

@@ -6,12 +6,14 @@ export function Sidebar() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const {
     rooms, uiState, canvas,
-    addRoom, updateRoom, renameRoom, deleteRoom,
-    setSelectedId, undo, redo,
+    addRoom, updateRoom, renameRoom, deleteRoom, deleteRooms,
+    setSelectedIds, toggleSelectedId, undo, redo,
     exportJson, importJson, getNetArea,
   } = useFloorPlanStore();
 
-  const selected = rooms.find((r) => r.id === uiState.selectedId);
+  const { selectedIds } = uiState;
+  const primaryId = selectedIds[0] ?? null;
+  const selected = rooms.find((r) => r.id === primaryId);
   const activeRooms = rooms.filter((r) => r.floor === uiState.activeFloor);
 
   // ── Save / Open ───────────────────────────────────────────────────────────
@@ -59,7 +61,7 @@ export function Sidebar() {
             }`}
             onClick={() =>
               useFloorPlanStore.setState((s) => ({
-                uiState: { ...s.uiState, activeFloor: floor, selectedId: null },
+                uiState: { ...s.uiState, activeFloor: floor, selectedIds: [] },
               }))
             }
           >
@@ -90,11 +92,11 @@ export function Sidebar() {
           <button
             key={room.id}
             className={`w-full text-left px-2.5 py-1.5 rounded-md mb-0.5 text-sm flex items-center gap-2 transition-colors ${
-              uiState.selectedId === room.id
+              selectedIds.includes(room.id)
                 ? 'bg-blue-50 text-blue-900'
                 : 'text-gray-700 hover:bg-gray-50'
             }`}
-            onClick={() => setSelectedId(room.id)}
+            onClick={(e) => e.shiftKey ? toggleSelectedId(room.id) : setSelectedIds([room.id])}
           >
             <span
               className="w-3 h-3 rounded-sm flex-shrink-0 border border-gray-300"
@@ -108,8 +110,26 @@ export function Sidebar() {
         ))}
       </div>
 
-      {/* Properties panel — shown when a room is selected */}
-      {selected && (
+      {/* Multi-select banner — shown when 2+ rooms are selected */}
+      {selectedIds.length > 1 && (
+        <div className="border-t border-gray-200 px-4 py-3 space-y-2">
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+            Selection
+          </p>
+          <p className="text-xs text-gray-600">
+            <span className="font-semibold text-gray-800">{selectedIds.length}</span> rooms selected
+          </p>
+          <button
+            className="w-full py-1 text-xs text-red-600 hover:bg-red-50 rounded-md border border-red-200 transition-colors"
+            onClick={() => deleteRooms(selectedIds)}
+          >
+            Delete {selectedIds.length} rooms
+          </button>
+        </div>
+      )}
+
+      {/* Properties panel — shown when exactly one room is selected */}
+      {selected && selectedIds.length === 1 && (
         <div className="border-t border-gray-200 px-4 py-3 space-y-2.5">
           <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
             Properties
@@ -240,6 +260,7 @@ export function Sidebar() {
           </button>
         </div>
       )}
+
 
       {/* Footer — file actions + undo/redo */}
       <div className="border-t border-gray-200 px-4 py-3 space-y-2">
