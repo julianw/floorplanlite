@@ -28,9 +28,10 @@ export interface CanvasSettings {
 }
 
 export interface UiState {
-  selectedIds: string[];   // replaces selectedId — supports multi-select
+  selectedIds: string[];
   showNetArea: boolean;
   activeFloor: string;
+  placingOpening: 'door' | 'window' | null; // transient — not persisted
 }
 
 export interface AppState {

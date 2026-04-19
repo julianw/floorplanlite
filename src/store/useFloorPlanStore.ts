@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { snapToGrid, computeNetArea } from '../engine/geometry';
-import type { Room, CanvasSettings, UiState, AppState } from '../types';
+import type { Room, Opening, CanvasSettings, UiState, AppState } from '../types';
 
 const MAX_HISTORY = 50;
 
@@ -25,18 +25,23 @@ interface FloorPlanStore {
   // Room mutations (all except rename push to history)
   addRoom: (x?: number, y?: number) => void;
   updateRoom: (id: string, patch: Partial<Pick<Room, 'x' | 'y' | 'w' | 'h' | 'color' | 'isCutter' | 'targetParent'>>) => void;
-  batchMoveRooms: (moves: { id: string; x: number; y: number }[]) => void; // atomic multi-room move (one undo step)
-  mergeRooms: (idA: string, idB: string) => void; // union bounding box, one undo step
-  renameRoom: (id: string, label: string) => void; // live update, no history push
+  batchMoveRooms: (moves: { id: string; x: number; y: number }[]) => void;
+  mergeRooms: (idA: string, idB: string) => void;
+  renameRoom: (id: string, label: string) => void;
   deleteRoom: (id: string) => void;
-  deleteRooms: (ids: string[]) => void; // bulk delete — one undo step
+  deleteRooms: (ids: string[]) => void;
+
+  // Opening mutations (push to history)
+  addOpening: (roomId: string, opening: Omit<Opening, 'id'>) => void;
+  removeOpening: (roomId: string, openingId: string) => void;
 
   // Collision suppression (Layer action — transient)
   suppressCollision: (idA: string, idB: string) => void;
 
-  // Selection
+  // Selection & placement mode
   setSelectedIds: (ids: string[]) => void;
-  toggleSelectedId: (id: string) => void; // Shift+Click add/remove
+  toggleSelectedId: (id: string) => void;
+  setPlacingOpening: (type: 'door' | 'window' | null) => void;
 
   // History
   undo: () => void;
@@ -64,6 +69,7 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
     selectedIds: [],
     showNetArea: true,
     activeFloor: 'Floor 1',
+    placingOpening: null,
   },
   past: [],
   future: [],
@@ -157,7 +163,6 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
     const updated = rooms
       .filter((r) => r.id !== idA && r.id !== idB)
       .map((r) =>
-        // Re-point cutter children of A or B to the merged room
         r.targetParent === idA || r.targetParent === idB
           ? { ...r, targetParent: mergedId }
           : r
@@ -170,6 +175,25 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
       future: [],
       uiState: { ...get().uiState, selectedIds: [mergedId] },
     });
+  },
+
+  // ── Openings ──────────────────────────────────────────────────────────────
+
+  addOpening: (roomId, opening) => {
+    const { rooms, past } = get();
+    const newOpening: Opening = { ...opening, id: crypto.randomUUID() };
+    const updated = rooms.map((r): Room =>
+      r.id === roomId ? { ...r, openings: [...r.openings, newOpening] } : r
+    );
+    set({ rooms: updated, past: pushHistory(past, rooms), future: [] });
+  },
+
+  removeOpening: (roomId, openingId) => {
+    const { rooms, past } = get();
+    const updated = rooms.map((r): Room =>
+      r.id === roomId ? { ...r, openings: r.openings.filter((o) => o.id !== openingId) } : r
+    );
+    set({ rooms: updated, past: pushHistory(past, rooms), future: [] });
   },
 
   // ── Suppress a collision pair (Layer action — transient) ──────────────────
@@ -198,14 +222,13 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
   deleteRooms: (ids) => {
     const { rooms, past } = get();
     const idSet = new Set(ids);
-    // Remove deleted rooms and cutter children whose parent was deleted
     const pruned = rooms.filter(
       (r) => !idSet.has(r.id) && !(r.targetParent && idSet.has(r.targetParent))
     );
     set({ rooms: pruned, past: pushHistory(past, rooms), future: [], uiState: { ...get().uiState, selectedIds: [] } });
   },
 
-  // ── Selection ─────────────────────────────────────────────────────────────
+  // ── Selection & placement ─────────────────────────────────────────────────
 
   setSelectedIds: (ids) => {
     set((s) => ({ uiState: { ...s.uiState, selectedIds: ids } }));
@@ -219,6 +242,10 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
         : [...selectedIds, id];
       return { uiState: { ...s.uiState, selectedIds: next } };
     });
+  },
+
+  setPlacingOpening: (type) => {
+    set((s) => ({ uiState: { ...s.uiState, placingOpening: type } }));
   },
 
   // ── Undo / Redo ───────────────────────────────────────────────────────────
@@ -269,7 +296,7 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
       },
       canvas,
       rooms,
-      uiState: { selectedIds: [], showNetArea: uiState.showNetArea, activeFloor: uiState.activeFloor },
+      uiState: { selectedIds: [], showNetArea: uiState.showNetArea, activeFloor: uiState.activeFloor, placingOpening: null },
     };
     return JSON.stringify(state, null, 2);
   },
@@ -284,6 +311,7 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
           selectedIds: [],
           showNetArea: (state.uiState as UiState & { showNetArea?: boolean })?.showNetArea ?? true,
           activeFloor: (state.uiState as UiState & { activeFloor?: string })?.activeFloor ?? 'Floor 1',
+          placingOpening: null,
         },
         past: [],
         future: [],

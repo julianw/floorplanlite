@@ -1,12 +1,158 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { Stage, Layer, Rect, Text, Group } from 'react-konva';
+import { Stage, Layer, Rect, Text, Group, Line, Path } from 'react-konva';
 import type Konva from 'konva';
 import { useFloorPlanStore } from '../../store/useFloorPlanStore';
 import { ftToPx, pxToFt, snapToGrid, intersectionArea, intersectionRect, touchingInDirection } from '../../engine/geometry';
 import { ResizeInput } from './ResizeInput';
 import { LabelInput } from './LabelInput';
 import { ConflictMenu } from './ConflictMenu';
-import type { Room } from '../../types';
+import type { Room, Opening } from '../../types';
+
+// ── Opening / wall rendering helpers ─────────────────────────────────────────
+
+const WALL_HIT_PX = 14; // px — proximity to an edge that counts as "on that wall"
+
+function wallPts(
+  edge: Opening['edge'], s: number, e: number, pw: number, ph: number
+): number[] {
+  switch (edge) {
+    case 'top':    return [s, 0, e, 0];
+    case 'right':  return [pw, s, pw, e];
+    case 'bottom': return [s, ph, e, ph];
+    default:       return [0, s, 0, e]; // left
+  }
+}
+
+/**
+ * Detect which wall edge the pointer is nearest to, or null if too far from
+ * any edge. Coordinates are in Konva group-local pixels.
+ */
+function detectEdge(
+  x: number, y: number, pw: number, ph: number
+): Opening['edge'] | null {
+  const candidates: [number, Opening['edge']][] = [
+    [y,      'top'],
+    [ph - y, 'bottom'],
+    [x,      'left'],
+    [pw - x, 'right'],
+  ];
+  candidates.sort((a, b) => a[0] - b[0]);
+  return candidates[0][0] <= WALL_HIT_PX ? candidates[0][1] : null;
+}
+
+/** Convert a pointer position inside a room group to an offset in feet along the detected edge. */
+function edgeOffsetFt(edge: Opening['edge'], x: number, y: number, ppf: number): number {
+  return (edge === 'top' || edge === 'bottom' ? x : y) / ppf;
+}
+
+function doorShapes(
+  id: string, edge: Opening['edge'],
+  gS: number, gE: number, pw: number, ph: number, color: string
+): React.ReactNode[] {
+  const g = gE - gS;
+  let leafPts: number[];
+  let arcData: string;
+
+  // Arc math: hinge at gap-start corner; door leaf swings 90° into room.
+  // Sweep direction chosen so the quarter-circle lies inside the room boundary.
+  switch (edge) {
+    case 'top':
+      leafPts = [gS, 0, gS, g];
+      arcData = `M ${gS} ${g} A ${g} ${g} 0 0 0 ${gE} 0`;
+      break;
+    case 'right':
+      leafPts = [pw, gS, pw - g, gS];
+      arcData = `M ${pw - g} ${gS} A ${g} ${g} 0 0 0 ${pw} ${gE}`;
+      break;
+    case 'bottom':
+      leafPts = [gS, ph, gS, ph - g];
+      arcData = `M ${gS} ${ph - g} A ${g} ${g} 0 0 1 ${gE} ${ph}`;
+      break;
+    default: // left
+      leafPts = [0, gS, g, gS];
+      arcData = `M ${g} ${gS} A ${g} ${g} 0 0 1 0 ${gE}`;
+  }
+
+  return [
+    <Line key={`dl-${id}`} points={leafPts} stroke={color} strokeWidth={1.5} listening={false} />,
+    <Path key={`da-${id}`} data={arcData} stroke={color} strokeWidth={1} fill="transparent" listening={false} />,
+  ];
+}
+
+function windowShapes(
+  id: string, edge: Opening['edge'],
+  gS: number, gE: number, pw: number, ph: number, color: string
+): React.ReactNode[] {
+  // Two parallel glazing lines inside the gap, offset slightly from the wall face.
+  const in1 = 3, in2 = 7;
+  let pts1: number[], pts2: number[];
+
+  switch (edge) {
+    case 'top':
+      pts1 = [gS, in1, gE, in1]; pts2 = [gS, in2, gE, in2]; break;
+    case 'right':
+      pts1 = [pw - in1, gS, pw - in1, gE]; pts2 = [pw - in2, gS, pw - in2, gE]; break;
+    case 'bottom':
+      pts1 = [gS, ph - in1, gE, ph - in1]; pts2 = [gS, ph - in2, gE, ph - in2]; break;
+    default: // left
+      pts1 = [in1, gS, in1, gE]; pts2 = [in2, gS, in2, gE];
+  }
+
+  return [
+    <Line key={`wl1-${id}`} points={pts1} stroke={color} strokeWidth={1.5} listening={false} />,
+    <Line key={`wl2-${id}`} points={pts2} stroke={color} strokeWidth={1.5} listening={false} />,
+  ];
+}
+
+/**
+ * Render all four walls of a room as individual Line segments, leaving gaps
+ * where openings are and drawing the appropriate architectural symbol in each gap.
+ */
+function buildWallShapes(
+  room: Room, pw: number, ph: number, ppf: number,
+  strokeColor: string, strokeWidth: number, dash?: number[]
+): React.ReactNode[] {
+  const shapes: React.ReactNode[] = [];
+  const edges: Opening['edge'][] = ['top', 'right', 'bottom', 'left'];
+
+  for (const edge of edges) {
+    const sorted = room.openings
+      .filter((o) => o.edge === edge)
+      .sort((a, b) => a.offset - b.offset);
+    const edgeLenFt = edge === 'top' || edge === 'bottom' ? room.w : room.h;
+    let curFt = 0;
+
+    for (const o of sorted) {
+      const endFt = Math.min(o.offset + o.w, edgeLenFt);
+      if (o.offset > curFt) {
+        shapes.push(
+          <Line key={`ws-${edge}-${o.id}-pre`}
+            points={wallPts(edge, curFt * ppf, o.offset * ppf, pw, ph)}
+            stroke={strokeColor} strokeWidth={strokeWidth} dash={dash} listening={false}
+          />
+        );
+      }
+      const gS = o.offset * ppf, gE = endFt * ppf;
+      shapes.push(
+        ...(o.type === 'door'
+          ? doorShapes(o.id, edge, gS, gE, pw, ph, strokeColor)
+          : windowShapes(o.id, edge, gS, gE, pw, ph, strokeColor))
+      );
+      curFt = endFt;
+    }
+
+    if (curFt < edgeLenFt) {
+      shapes.push(
+        <Line key={`ws-${edge}-tail`}
+          points={wallPts(edge, curFt * ppf, edgeLenFt * ppf, pw, ph)}
+          stroke={strokeColor} strokeWidth={strokeWidth} dash={dash} listening={false}
+        />
+      );
+    }
+  }
+
+  return shapes;
+}
 
 // ── Overlay state shapes ──────────────────────────────────────────────────────
 
@@ -49,10 +195,13 @@ export function FloorPlanCanvas() {
   const {
     rooms, uiState, canvas,
     updateRoom, batchMoveRooms, mergeRooms, renameRoom, deleteRoom, deleteRooms,
-    setSelectedIds, toggleSelectedId,
+    addOpening, removeOpening,
+    setSelectedIds, toggleSelectedId, setPlacingOpening,
     suppressedCollisions, suppressCollision,
     undo, redo, getNetArea,
   } = useFloorPlanStore();
+
+  const placingOpening = uiState.placingOpening;
 
   const selectedIds = uiState.selectedIds;
   const { ppf, gridSnap } = canvas;
@@ -181,7 +330,9 @@ export function FloorPlanCanvas() {
         e.preventDefault(); redo(); return;
       }
       if (e.key === 'Escape') {
-        setSelectedIds([]); return;
+        setPlacingOpening(null);
+        setSelectedIds([]);
+        return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key === '0') {
         e.preventDefault(); resetZoom(); return;
@@ -226,7 +377,7 @@ export function FloorPlanCanvas() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [deleteRooms, setSelectedIds, undo, redo, resetZoom, fitToScreen, exportPng]);
+  }, [deleteRooms, setSelectedIds, setPlacingOpening, undo, redo, resetZoom, fitToScreen, exportPng]);
 
   const handleWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
@@ -470,11 +621,18 @@ export function FloorPlanCanvas() {
   }, [conflictMenu, suppressCollision]);
 
   return (
-    <div ref={containerRef} className={`relative w-full h-full bg-gray-100 ${shiftHeld ? 'cursor-crosshair' : altHeld ? 'cursor-move' : 'cursor-default'}`}>
+    <div ref={containerRef} className={`relative w-full h-full bg-gray-100 ${placingOpening ? 'cursor-crosshair' : shiftHeld ? 'cursor-crosshair' : altHeld ? 'cursor-move' : 'cursor-default'}`}>
       {/* Stamp Mode indicator */}
       {shiftHeld && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-amber-500 text-white text-xs font-semibold px-3 py-1 rounded-full shadow-md pointer-events-none select-none">
           ✂ Stamp Mode — drag a room onto another to make it a cutter
+        </div>
+      )}
+
+      {/* Placement mode indicator */}
+      {placingOpening && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 bg-indigo-600 text-white text-xs font-semibold px-3 py-1 rounded-full shadow-md pointer-events-none select-none">
+          {placingOpening === 'door' ? 'Door' : 'Window'} — click a wall edge to place &nbsp;·&nbsp; Esc to cancel
         </div>
       )}
 
@@ -493,6 +651,7 @@ export function FloorPlanCanvas() {
         onDragStart={dismissOverlays}
         onClick={(e) => {
           if (e.target === e.target.getStage()) {
+            setPlacingOpening(null);
             setSelectedIds([]);
             dismissOverlays();
           }
@@ -540,8 +699,31 @@ export function FloorPlanCanvas() {
                 key={room.id}
                 x={px}
                 y={py}
-                draggable
-                onClick={(e) => { e.cancelBubble = true; handleRoomClick(room, e.evt.shiftKey); }}
+                draggable={!placingOpening}
+                onClick={(e) => {
+                  e.cancelBubble = true;
+                  if (placingOpening) {
+                    const pos = (e.currentTarget as Konva.Group).getRelativePointerPosition();
+                    if (!pos) { setPlacingOpening(null); return; }
+                    const edge = detectEdge(pos.x, pos.y, pw, ph);
+                    if (edge) {
+                      const edgeLenFt = edge === 'top' || edge === 'bottom' ? room.w : room.h;
+                      const defaultW = Math.min(3, edgeLenFt);
+                      const rawOffset = edgeOffsetFt(edge, pos.x, pos.y, ppf);
+                      const snapped = Math.max(
+                        0,
+                        Math.min(
+                          snapToGrid(rawOffset - defaultW / 2, gridSnap),
+                          edgeLenFt - defaultW,
+                        ),
+                      );
+                      addOpening(room.id, { type: placingOpening, edge, offset: snapped, w: defaultW });
+                    }
+                    setPlacingOpening(null);
+                    return;
+                  }
+                  handleRoomClick(room, e.evt.shiftKey);
+                }}
                 onDblClick={(e) => { e.cancelBubble = true; handleRoomDblClick(room); }}
                 onContextMenu={(e) => handleRoomContextMenu(e as Konva.KonvaEventObject<PointerEvent>, room)}
                 onDragStart={dismissOverlays}
@@ -623,21 +805,31 @@ export function FloorPlanCanvas() {
                   }
                 }}
               >
+                {/* Room fill */}
+                <Rect width={pw} height={ph} fill={room.color} listening={false} />
+
+                {/* Walls with gaps at openings */}
+                {buildWallShapes(
+                  room, pw, ph, ppf,
+                  room.isCutter ? '#f59e0b' : '#374151',
+                  room.isCutter ? 2 : 1.5,
+                  room.isCutter ? [4, 4] : undefined,
+                )}
+
+                {/* Selection / edit highlight (stroke only, no fill) */}
                 <Rect
-                  width={pw}
-                  height={ph}
-                  fill={room.color}
+                  width={pw} height={ph} fill="transparent"
                   stroke={
                     isRenaming || isResizing ? '#7c3aed'
                     : isSelected             ? '#2563eb'
-                    : room.isCutter          ? '#f59e0b'  // amber for cutter rooms
-                    : '#6b7280'
+                    : undefined
                   }
-                  strokeWidth={isRenaming || isResizing || isSelected || room.isCutter ? 2 : 1}
-                  dash={isResizing || isRenaming ? [6, 3] : room.isCutter ? [4, 4] : undefined}
+                  strokeWidth={isSelected || isRenaming || isResizing ? 2 : 0}
+                  dash={isResizing || isRenaming ? [6, 3] : undefined}
                   shadowColor={isSelected && !isResizing && !isRenaming ? '#2563eb' : undefined}
                   shadowBlur={isSelected && !isResizing && !isRenaming ? 6 : 0}
                   shadowOpacity={0.3}
+                  listening={false}
                 />
                 {/* Hide label while renaming; hide both while resizing */}
                 {!isResizing && !isRenaming && (

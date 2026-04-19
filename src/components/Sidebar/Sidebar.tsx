@@ -7,7 +7,8 @@ export function Sidebar() {
   const {
     rooms, uiState, canvas,
     addRoom, updateRoom, renameRoom, deleteRoom, deleteRooms,
-    setSelectedIds, toggleSelectedId, undo, redo,
+    addOpening, removeOpening,
+    setSelectedIds, toggleSelectedId, setPlacingOpening, undo, redo,
     exportJson, importJson, getNetArea,
   } = useFloorPlanStore();
 
@@ -248,6 +249,49 @@ export function Sidebar() {
                   </p>
                 )}
               </label>
+            )}
+          </div>
+
+          {/* ── Openings ── */}
+          <div className="border-t border-gray-100 pt-2.5 space-y-2">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+              Openings
+            </p>
+
+            <div className="flex gap-1.5">
+              {(['door', 'window'] as const).map((type) => (
+                <button
+                  key={type}
+                  className={`flex-1 py-1 text-xs rounded-md border transition-colors ${
+                    uiState.placingOpening === type
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'text-gray-600 border-gray-300 hover:bg-gray-50'
+                  }`}
+                  onClick={() =>
+                    setPlacingOpening(uiState.placingOpening === type ? null : type)
+                  }
+                >
+                  {type === 'door' ? '+ Door' : '+ Window'}
+                </button>
+              ))}
+            </div>
+
+            {selected.openings.length > 0 && (
+              <div className="space-y-1">
+                {selected.openings.map((o) => (
+                  <div key={o.id} className="flex items-center justify-between text-[11px] text-gray-600 px-1 py-0.5 rounded hover:bg-gray-50">
+                    <span className="truncate">
+                      {o.type === 'door' ? 'Door' : 'Win'} · {o.edge} +{o.offset}ft ({o.w}ft)
+                    </span>
+                    <button
+                      className="ml-1 flex-shrink-0 text-red-400 hover:text-red-600 font-bold leading-none"
+                      onClick={() => removeOpening(selected.id, o.id)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 
