@@ -855,6 +855,37 @@ export function FloorPlanCanvas() {
                     listening={false}
                   />
                 )}
+
+                {/* Dimension labels — outside the room boundary */}
+                {uiState.showDimensions && !isResizing && (() => {
+                  const fmtFt = (n: number) => n % 1 === 0 ? `${n}'` : `${n.toFixed(1)}'`;
+                  const wLabel = fmtFt(room.w);
+                  const hLabel = fmtFt(room.h);
+                  const hLabelPx = hLabel.length * 6.5;
+                  return (
+                    <>
+                      <Text
+                        text={wLabel}
+                        width={pw}
+                        x={0}
+                        y={-16}
+                        align="center"
+                        fontSize={10}
+                        fill="#4b5563"
+                        listening={false}
+                      />
+                      <Text
+                        text={hLabel}
+                        x={-14}
+                        y={ph / 2 + hLabelPx / 2}
+                        rotation={-90}
+                        fontSize={10}
+                        fill="#4b5563"
+                        listening={false}
+                      />
+                    </>
+                  );
+                })()}
               </Group>
             );
           })}
@@ -970,6 +1001,42 @@ export function FloorPlanCanvas() {
           className="px-1.5 py-0.5 rounded hover:bg-gray-100 text-xs font-medium text-gray-600 transition-colors"
         >
           1:1
+        </button>
+
+        <div className="w-px h-4 bg-gray-200 mx-0.5" />
+
+        {/* Dimension labels toggle */}
+        <button
+          title="Toggle dimension labels"
+          onClick={() =>
+            useFloorPlanStore.setState((s) => ({
+              uiState: { ...s.uiState, showDimensions: !s.uiState.showDimensions },
+            }))
+          }
+          className={`px-1.5 py-0.5 rounded text-xs font-medium transition-colors ${
+            uiState.showDimensions
+              ? 'bg-indigo-100 text-indigo-700'
+              : 'hover:bg-gray-100 text-gray-600'
+          }`}
+        >
+          Dim
+        </button>
+
+        {/* Net area toggle */}
+        <button
+          title="Toggle net area labels"
+          onClick={() =>
+            useFloorPlanStore.setState((s) => ({
+              uiState: { ...s.uiState, showNetArea: !s.uiState.showNetArea },
+            }))
+          }
+          className={`px-1.5 py-0.5 rounded text-xs font-medium transition-colors ${
+            uiState.showNetArea
+              ? 'bg-indigo-100 text-indigo-700'
+              : 'hover:bg-gray-100 text-gray-600'
+          }`}
+        >
+          Net
         </button>
       </div>
     </div>

@@ -30,6 +30,7 @@ export interface CanvasSettings {
 export interface UiState {
   selectedIds: string[];
   showNetArea: boolean;
+  showDimensions: boolean;
   activeFloor: string;
   placingOpening: 'door' | 'window' | null; // transient — not persisted
 }

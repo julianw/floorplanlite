@@ -68,6 +68,7 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
   uiState: {
     selectedIds: [],
     showNetArea: true,
+    showDimensions: false,
     activeFloor: 'Floor 1',
     placingOpening: null,
   },
@@ -296,7 +297,7 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
       },
       canvas,
       rooms,
-      uiState: { selectedIds: [], showNetArea: uiState.showNetArea, activeFloor: uiState.activeFloor, placingOpening: null },
+      uiState: { selectedIds: [], showNetArea: uiState.showNetArea, showDimensions: uiState.showDimensions, activeFloor: uiState.activeFloor, placingOpening: null },
     };
     return JSON.stringify(state, null, 2);
   },
@@ -310,6 +311,7 @@ export const useFloorPlanStore = create<FloorPlanStore>((set, get) => ({
         uiState: {
           selectedIds: [],
           showNetArea: (state.uiState as UiState & { showNetArea?: boolean })?.showNetArea ?? true,
+          showDimensions: (state.uiState as UiState & { showDimensions?: boolean })?.showDimensions ?? false,
           activeFloor: (state.uiState as UiState & { activeFloor?: string })?.activeFloor ?? 'Floor 1',
           placingOpening: null,
         },
