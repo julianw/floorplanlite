@@ -7,9 +7,8 @@
 
 ## Current Status
 
-**Active phase:** Phase 2 — Boolean & Conflict System  
 **Active phase:** Phase 3 — Openings & Verticals  
-**Next immediate task:** Door / Window blocks that snap to wall perimeter
+**Next immediate task:** Dimension labels toggle (show W/H on room edges)
 
 > ⚠️ Two Phase 1 UI items were deferred by choice: Show/hide net area toggle + room colour picker. Can be picked up anytime.
 
@@ -94,10 +93,10 @@
 
 ---
 
-## Phase 3 — Openings & Verticals ⏳ Not Started
+## Phase 3 — Openings & Verticals ⏳ In Progress
 
-- [ ] Door / Window blocks that snap to wall perimeter
-- [ ] Opening position stored as edge + offset (survives room resize)
+- [x] Door / Window blocks that snap to wall perimeter
+- [x] Opening position stored as edge + offset (survives room resize)
 - [ ] Multi-floor management (already has tab UI)
 - [ ] Overlay / Ghosting mode (50% opacity of floor below)
 - [ ] Dimension labels toggle (show W/H on room edges)
